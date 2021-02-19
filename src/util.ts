@@ -16,6 +16,9 @@ export const median = (numbers: number[]): number => {
 export const writePriceToChain = async (web3: any, aggrAddr: string, aggrABI: object, oracleAddr: string, price: number, signer: any): Promise<number> => {
   const aggrContract = new web3.eth.Contract(aggrABI, aggrAddr);
   const roundInfo = await aggrContract.methods.oracleRoundState(oracleAddr, 0).call();
+  if (!roundInfo._eligibleToSubmit) {
+    throw new Error('Not eligible to submit price.')
+  }
   const roundId = roundInfo._roundId;
   // To make it integer
   const prc = Math.round(price * 1000);

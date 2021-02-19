@@ -1,10 +1,8 @@
 import { Requester, Validator, AdapterError } from '@chainlink/external-adapter';
 import Web3 from "web3";
-import { ExecuteWithJobId, Execute } from './types';
+import { ExecuteWithJobId, Execute, ExecuteFactory, Config } from './types';
 import { makeConfig, logConfig, makeCMCConfig, makeDockConfig } from './config';
-import { cryptocompare } from './endpoint';
-import { coingecko } from './endpoint';
-import { coinmarketcap } from './endpoint';
+import { cryptocompare, coingecko, coinmarketcap } from './endpoint';
 import { median, writePriceToChain } from './util';
 
 export const MEDIAN_PRICE = 'median_price';
@@ -88,7 +86,9 @@ const executeCc: ExecuteWithJobId = async (request, jobRunID) => {
 const executeCg: ExecuteWithJobId = async (request, jobRunID) => {
   const config = makeConfig();
   try {
-    return coingecko.execute(request, config);
+    const x= await coingecko.execute(request, config);
+    console.log(x);
+    return x;
   } catch(e) {
     throw new AdapterError({
       jobRunID,
@@ -163,4 +163,8 @@ export const execute: Execute = async (request) => {
       })
     }
   }
+}
+
+export const makeExecute: ExecuteFactory<Config> = (config?) => {
+  return async (request) => execute(request)
 }
