@@ -1,3 +1,5 @@
+import { PriceUpdateParams } from './types';
+
 export const median = (numbers: number[]): number => {
   let mid: number;
   const numsLen = numbers.length;
@@ -13,16 +15,49 @@ export const median = (numbers: number[]): number => {
   return mid;
 };
 
-export const writePriceToChain = async (web3: any, aggrAddr: string, aggrABI: object, oracleAddr: string, price: number, signer: any): Promise<number> => {
+export const timestampSecs = (): number => {
+  return Math.round(Date.now() / 1000);
+}
+
+// If PriceUpdateParams indicate an update
+export const isPotentialPriceUpdate = (priceUpdate: PriceUpdateParams): boolean => {
+  return priceUpdate.forceWrite || (priceUpdate.idleTime === 0) || (priceUpdate.thresholdPct === 0);
+}
+
+export const priceUpdateNeeded = (currentPrice: number, latestRoundData: {updatedAt: number, answer: number}, priceUpdate: PriceUpdateParams): boolean => {
+  console.log(priceUpdate);
+  const timestamp =  timestampSecs() // timestamp in seconds as the contract stores price update timestamp in seconds
+  if ((timestamp - latestRoundData.updatedAt) < priceUpdate.idleTime) {
+    // The aggregator contract only tracks timestamp but if its made to track the block number then this code can query current block number and then compare.
+    const priceDiffAbs = Math.abs(currentPrice - latestRoundData.answer);
+    if ( ((priceDiffAbs / latestRoundData.answer) * 100) < priceUpdate.thresholdPct) {
+      return false;
+    }
+  }
+  return true;
+}
+
+export const writePriceToChain = async (web3: any, aggrAddr: string, aggrABI: object, oracleAddr: string, signer: any, priceUpdate: PriceUpdateParams): Promise<number | undefined> => {
   const aggrContract = new web3.eth.Contract(aggrABI, aggrAddr);
-  const roundInfo = await aggrContract.methods.oracleRoundState(oracleAddr, 0).call();
-  if (!roundInfo._eligibleToSubmit) {
+  const oracleState = await aggrContract.methods.oracleRoundState(oracleAddr, 0).call();
+  if (!oracleState._eligibleToSubmit) {
     throw new Error('Not eligible to submit price.')
   }
-  const roundId = roundInfo._roundId;
+
   // To make it integer
-  const prc = Math.round(price * 1000);
-  const encoded = aggrContract.methods.submit(roundId, prc).encodeABI();
+  const normalizedPrice = Math.round(priceUpdate.currentPrice * 1000);
+
+  // Check if price should not be updated because either the price isn't stale ago or the current price has not deviated enough from the on-chain price
+  if (!isPotentialPriceUpdate(priceUpdate)) {
+    const latestRoundData = await aggrContract.methods.latestRoundData().call();
+    if (!priceUpdateNeeded(normalizedPrice, latestRoundData, priceUpdate)) {
+      console.log('Not updating price');
+      return;
+    }
+  }
+
+  const nextRoundId = oracleState._roundId;
+  const encoded = aggrContract.methods.submit(nextRoundId, normalizedPrice).encodeABI();
 
 	const txn = await signer.signTransaction(
     {

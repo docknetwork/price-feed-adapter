@@ -74,3 +74,14 @@ export type DockConfig = {
   AGGREGATOR_ADDRESS: string,
   AGGREGATOR_ABI: object,
 }
+
+export type PriceUpdateParams = {
+  // Update with the current price no matter what
+  forceWrite: boolean,
+  // Current price
+  currentPrice: number,
+  // Threshold percentage by which price should change to trigger an update on.
+  thresholdPct: number,
+  // Even if current price has not deviated by threshold, trigger an update if the last timestamp where update happened is older by this number
+  idleTime: number,
+}

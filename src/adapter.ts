@@ -1,6 +1,6 @@
 import { Requester, Validator, AdapterError } from '@chainlink/external-adapter';
 import Web3 from "web3";
-import { ExecuteWithJobId, Execute, ExecuteFactory, Config } from './types';
+import { ExecuteWithJobId, Execute, ExecuteFactory, Config, PriceUpdateParams } from './types';
 import { makeConfig, logConfig, makeCMCConfig, makeDockConfig } from './config';
 import { cryptocompare, coingecko, coinmarketcap } from './endpoint';
 import { median, writePriceToChain } from './util';
@@ -17,11 +17,23 @@ const inputParams = {
 }
 
 // Helper to write price on chain
-const writeToChain = async (jobRunID, price: number) => {
+const writeToChain = async (request, jobRunID, price: number) => {
+  const validator = new Validator(request, inputParams);
+  const forceWrite = validator.validated.data.forceWrite || false;
+  const thresholdPct = validator.validated.data.thresholdPct || 0;
+  const absoluteThreshold = validator.validated.data.absoluteThreshold || 0;
+  const idleRounds = validator.validated.data.idleRounds || 0;
+  const priceUpdate: PriceUpdateParams = {
+    forceWrite,
+    thresholdPct,
+    absoluteThreshold,
+    idleTime: idleRounds,
+    currentPrice: price
+  }
   const config = makeDockConfig();
   const web3 = new Web3(config.NODE_ENDPOINT);
   const signer = web3.eth.accounts.privateKeyToAccount(config.ORACLE_SK);
-  const blockNumber = await writePriceToChain(web3, config.AGGREGATOR_ADDRESS, config.AGGREGATOR_ABI, config.ORACLE_ADDRESS, price, signer);
+  const blockNumber = await writePriceToChain(web3, config.AGGREGATOR_ADDRESS, config.AGGREGATOR_ABI, config.ORACLE_ADDRESS, signer, priceUpdate);
   return {
     jobRunID: jobRunID,
     data: { result: blockNumber },
@@ -33,25 +45,25 @@ const writeToChain = async (jobRunID, price: number) => {
 // Writes price of DOCK/USD from coinmarketcap on chain
 const executeWriteCmc: ExecuteWithJobId = async (request, jobRunID) => {
   const priceCmc = (await executeCmc(request, jobRunID)).result;
-  return writeToChain(jobRunID, priceCmc);
+  return writeToChain(request, jobRunID, priceCmc);
 }
 
 // Writes price of DOCK/USD from cryptocompare on chain
 const executeWriteCc: ExecuteWithJobId = async (request, jobRunID) => {
   const priceCmc = (await executeCc(request, jobRunID)).result;
-  return writeToChain(jobRunID, priceCmc);
+  return writeToChain(request, jobRunID, priceCmc);
 }
 
 // Writes price of DOCK/USD from coingecko on chain
 const executeWriteCg: ExecuteWithJobId = async (request, jobRunID) => {
   const priceCmc = (await executeCg(request, jobRunID)).result;
-  return writeToChain(jobRunID, priceCmc);
+  return writeToChain(request, jobRunID, priceCmc);
 }
 
 // Writes meidan price of DOCK/USD on chain
 const executeWriteMedianPrice: ExecuteWithJobId = async (request, jobRunID) => {
   const priceCmc = (await executeMedianPrice(request, jobRunID)).result;
-  return writeToChain(jobRunID, priceCmc);
+  return writeToChain(request, jobRunID, priceCmc);
 }
 
 // Gets price of DOCK/USD from coinmarketcap
@@ -86,9 +98,7 @@ const executeCc: ExecuteWithJobId = async (request, jobRunID) => {
 const executeCg: ExecuteWithJobId = async (request, jobRunID) => {
   const config = makeConfig();
   try {
-    const x= await coingecko.execute(request, config);
-    console.log(x);
-    return x;
+    return coingecko.execute(request, config);
   } catch(e) {
     throw new AdapterError({
       jobRunID,
