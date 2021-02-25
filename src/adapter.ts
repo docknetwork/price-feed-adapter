@@ -21,12 +21,10 @@ const writeToChain = async (request, jobRunID, price: number) => {
   const validator = new Validator(request, inputParams);
   const forceWrite = validator.validated.data.forceWrite || false;
   const thresholdPct = validator.validated.data.thresholdPct || 0;
-  const absoluteThreshold = validator.validated.data.absoluteThreshold || 0;
   const idleRounds = validator.validated.data.idleRounds || 0;
   const priceUpdate: PriceUpdateParams = {
     forceWrite,
     thresholdPct,
-    absoluteThreshold,
     idleTime: idleRounds,
     currentPrice: price
   }

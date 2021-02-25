@@ -56,6 +56,7 @@ export const writePriceToChain = async (web3: any, aggrAddr: string, aggrABI: ob
     }
   }
 
+  console.log(`Updating on chain price to ${priceUpdate.currentPrice}`);
   const nextRoundId = oracleState._roundId;
   const encoded = aggrContract.methods.submit(nextRoundId, normalizedPrice).encodeABI();
 

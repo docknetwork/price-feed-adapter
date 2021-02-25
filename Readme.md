@@ -33,6 +33,9 @@ const data = await execute({ id: "1", data: {endpoint: WRITE_CMC_PRICE}}  as Ada
 
 // To write median price
 const data = await execute({ id: "1", data: {endpoint: WRITE_MEDIAN_PRICE}}  as AdapterRequest );
+
+// To write the price on chain when the current price has either deviated by 5% or is stale by 30 seconds
+const data = await execute({ id: "1", data: {endpoint: WRITE_MEDIAN_PRICE, thresholdPct: 5, idleTime: 30}}  as AdapterRequest );
 ```
 
 The `result` key of `data` will contain the block number.

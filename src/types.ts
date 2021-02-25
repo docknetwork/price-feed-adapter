@@ -82,6 +82,6 @@ export type PriceUpdateParams = {
   currentPrice: number,
   // Threshold percentage by which price should change to trigger an update on.
   thresholdPct: number,
-  // Even if current price has not deviated by threshold, trigger an update if the last timestamp where update happened is older by this number
+  // Even if current price has not deviated by threshold, trigger an update if the last timestamp where update happened is older by this number of seconds
   idleTime: number,
 }
