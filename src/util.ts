@@ -1,5 +1,9 @@
 import { PriceUpdateParams } from './types';
 
+require('dotenv').config();
+
+const { MinGasPrice, MaxGas } = process.env;
+
 export const median = (numbers: number[]): number => {
   let mid: number;
   const numsLen = numbers.length;
@@ -64,9 +68,9 @@ export const writePriceToChain = async (web3: any, aggrAddr: string, aggrABI: ob
     {
 			to: aggrAddr,
 			data: encoded,
-			value: "0x00",
-			gasPrice: "0x01", // Hardcoding gas price as its fixed in the node
-			gas: "0x1000000",
+			value: web3.utils.toBN(0),
+			gasPrice: web3.utils.toBN(MinGasPrice), // Hardcoding gas price as its fixed in the node
+			gas: web3.utils.toBN(MaxGas),
 	  }
   );
 	

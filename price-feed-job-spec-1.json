@@ -1,0 +1,19 @@
+{
+  "name": "write every minute",
+  "initiators": [
+    {
+      "type": "cron",
+      "params": {
+        "schedule": "CRON_TZ=UTC */1 * * * *"
+      }
+    }
+  ],
+  "tasks": [
+    {
+      "type": "dock_usd_bridge",
+      "params": {
+        "endpoint": "write_median_price"
+      }
+    }
+  ]
+}

@@ -39,3 +39,25 @@ const data = await execute({ id: "1", data: {endpoint: WRITE_MEDIAN_PRICE, thres
 ```
 
 The `result` key of `data` will contain the block number.
+
+
+## Jobspecs
+
+There are 2 jobspecs. Each of them is initiated by a cron trigger each minute. They assume the adapter has been deployed with the bridge named `dock_usd_bridge`.  
+[Spec 1](price-feed-job-spec-1.json) will always write on the chain.  
+[Spec 2](price-feed-job-spec-1.json) will write on the chain when either the price deviates by 1% or 3600 seconds (1 hour) has passed.
+
+
+## Env variables
+The following environment variables need to be set for the adapter to work.
+
+```
+NODE_ENDPOINT=<TCP endpoint of the blockchain node>
+MinGasPrice = <Minimum gas price>
+MaxGas = <Maximum allowed gas for a txn>
+CMC_API_KEY=<Coinmarketcap API key>
+ORACLE_SK=<Secret key for Oracle's account>
+ORACLE_ADDRESS=<EMV address of the Oracle>
+AGGREGATOR_ADDRESS=<EMV address of the price aggregator contract>
+AGGREGATOR_ABI=<ABI of the price aggregator contract>
+```

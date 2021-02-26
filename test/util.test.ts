@@ -1,6 +1,5 @@
 import { expect, test } from '@jest/globals';
 import { isPotentialPriceUpdate, priceUpdateNeeded, timestampSecs } from '../src/util';
-import { PriceUpdateParams } from '../src/types';
 
 test('Check PriceUpdateParams', () => {
   expect(isPotentialPriceUpdate({
