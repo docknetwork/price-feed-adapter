@@ -22,7 +22,6 @@ const data = await execute({ id: "1", data: {endpoint: MEDIAN_PRICE}}  as Adapte
 
 The `result` key of `data` will contain the price.
 
-
 ## To write price for DOCK/USD pair on chain
 
 ```js
@@ -40,6 +39,11 @@ const data = await execute({ id: "1", data: {endpoint: WRITE_MEDIAN_PRICE, thres
 
 The `result` key of `data` will contain the block number.
 
+## Running the server
+
+```
+ts-node scripts/run-server.ts
+```
 
 ## Jobspecs
 
@@ -52,12 +56,13 @@ There are 2 jobspecs. Each of them is initiated by a cron trigger each minute. T
 The following environment variables need to be set for the adapter to work.
 
 ```
-NODE_ENDPOINT=<TCP endpoint of the blockchain node>
+CMC_API_KEY=<Coinmarketcap API key>
+MinimumAnswersForPriceFeed = <Minimum answers (from different sources) required for price feed>
 MinGasPrice = <Minimum gas price>
 MaxGas = <Maximum allowed gas for a txn>
-CMC_API_KEY=<Coinmarketcap API key>
+NODE_ENDPOINT=<TCP endpoint of the blockchain node>
 ORACLE_SK=<Secret key for Oracle's account>
-ORACLE_ADDRESS=<EMV address of the Oracle>
-AGGREGATOR_ADDRESS=<EMV address of the price aggregator contract>
+ORACLE_ADDRESS=<EVM address of the Oracle>
+AGGREGATOR_ADDRESS=<EVM address of the price aggregator contract>
 AGGREGATOR_ABI=<ABI of the price aggregator contract>
 ```

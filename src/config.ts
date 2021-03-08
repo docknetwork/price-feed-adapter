@@ -5,6 +5,9 @@ import { Config, DockConfig } from './types';
 
 dotenv.config();
 
+// Minimum answers (from different sources) required for price feed.
+export const MinimumAnswersForPriceFeed = 2;
+
 export const makeCMCConfig = (): Config => {
   // `Requester.getDefaultConfig` is available in newer version
   // const config = Requester.getDefaultConfig(prefix, true);
@@ -30,6 +33,10 @@ export const makeDockConfig = (): DockConfig => {
     AGGREGATOR_ADDRESS: process.env.AGGREGATOR_ADDRESS,
     AGGREGATOR_ABI: JSON.parse(process.env.AGGREGATOR_ABI),
   }
+}
+
+export const minimumAnswers = (): number => {
+  return parseInt(util.getEnv('MinimumAnswersForPriceFeed') as string) || MinimumAnswersForPriceFeed;
 }
 
 // Following code is copied from chainlink's ea package

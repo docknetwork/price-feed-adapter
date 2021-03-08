@@ -1,7 +1,7 @@
 import { Requester, Validator, AdapterError } from '@chainlink/external-adapter';
 import Web3 from "web3";
 import { ExecuteWithJobId, Execute, ExecuteFactory, Config, PriceUpdateParams } from './types';
-import { makeConfig, logConfig, makeCMCConfig, makeDockConfig } from './config';
+import { makeConfig, logConfig, makeCMCConfig, makeDockConfig, minimumAnswers } from './config';
 import { cryptocompare, coingecko, coinmarketcap } from './endpoint';
 import { median, writePriceToChain } from './util';
 
@@ -108,10 +108,39 @@ const executeCg: ExecuteWithJobId = async (request, jobRunID) => {
 
 // Gets median price of DOCK/USD after getting prices from coinmarketcap, cryptocompare, coingecko
 const executeMedianPrice: ExecuteWithJobId = async (request, jobRunID) => {
-  const priceCmc = (await executeCmc(request, jobRunID)).result; 
-  const priceCg = (await executeCg(request, jobRunID)).result; 
-  const priceCc = (await executeCc(request, jobRunID)).result;
-  const price = median([priceCmc, priceCg, priceCc])
+  const prices = [];
+
+  // Try to get prices from as many sources as possible
+  try {
+    const priceCmc = (await executeCmc(request, jobRunID)).result;
+    prices.push(priceCmc);
+  } catch(e) {
+    console.warn(`Job ${jobRunID}: Could not fetch price for Coinmarketcap. Error ${e}`);
+  }
+  try {
+    const priceCg = (await executeCg(request, jobRunID)).result;
+    prices.push(priceCg);
+  } catch(e) {
+    console.warn(`Job ${jobRunID}: Could not fetch price for Coingecko. Error ${e}`);
+  }
+  try {
+    const priceCc = (await executeCc(request, jobRunID)).result;
+    prices.push(priceCc);
+  } catch(e) {
+    console.warn(`Job ${jobRunID}: Could not fetch price for Cryptocompare. Error ${e}`);
+  }
+
+  const min = minimumAnswers();
+  if (prices.length < min) {
+    const errorMsg = `Couldn't get prices from sufficient number of sources. Needed at least ${min} but got only ${prices.length}`;
+    console.error(errorMsg);
+    throw new AdapterError({
+      jobRunID,
+      message: errorMsg,
+      statusCode: 500,
+    })
+  }
+  const price = median(prices)
   return {
     jobRunID: jobRunID,
     data: { result: price },

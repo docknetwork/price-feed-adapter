@@ -5,7 +5,6 @@ all.server(); */
 
 
 import express from 'express';
-import {util} from '@chainlink/ea-bootstrap';
 import {execute} from '../src/adapter';
 
 const port = process.env.EA_PORT || 8080
