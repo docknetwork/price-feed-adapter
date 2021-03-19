@@ -31,7 +31,7 @@ const writeToChain = async (request, jobRunID, price: number) => {
   const config = makeDockConfig();
   const web3 = new Web3(config.NODE_ENDPOINT);
   const signer = web3.eth.accounts.privateKeyToAccount(config.ORACLE_SK);
-  const blockNumber = await writePriceToChain(web3, config.AGGREGATOR_ADDRESS, config.AGGREGATOR_ABI, config.ORACLE_ADDRESS, signer, priceUpdate);
+  const blockNumber = await writePriceToChain(web3, config.PROXY_ADDRESS, config.PROXY_ABI, config.AGGREGATOR_ABI, config.ORACLE_ADDRESS, signer, priceUpdate);
   return {
     jobRunID: jobRunID,
     data: { result: blockNumber },

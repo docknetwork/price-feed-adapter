@@ -68,11 +68,18 @@ export type ExecuteWithConfigAndJobId<C extends Config> = (
 ) => Promise<AdapterResponse>
 
 export type DockConfig = {
+  // TCP endpoint of the Substrate node
   NODE_ENDPOINT: string,
+  // Oracle secret key. Used when writing to chain.
   ORACLE_SK: string,
+  // Oracle address. Used for reading oracle's last submission before when writing to chain.
   ORACLE_ADDRESS: string,
-  AGGREGATOR_ADDRESS: string,
-  AGGREGATOR_ABI: object,
+  // Address of the proxy contract
+  PROXY_ADDRESS: string,
+  // ABI of the proxy contract
+  PROXY_ABI: Array<Record<string, any>>,
+  // ABI of the aggregator contract
+  AGGREGATOR_ABI: Array<Record<string, any>>,
 }
 
 export type PriceUpdateParams = {

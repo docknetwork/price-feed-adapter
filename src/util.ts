@@ -41,13 +41,16 @@ export const priceUpdateNeeded = (currentPrice: number, latestRoundData: {update
   return true;
 }
 
-export const writePriceToChain = async (web3: any, aggrAddr: string, aggrABI: object, oracleAddr: string, signer: any, priceUpdate: PriceUpdateParams): Promise<number | undefined> => {
+export const writePriceToChain = async (web3: any, proxyAddr: string, proxyABI: Array<Record<string, any>>, aggrABI: Array<Record<string, any>>, oracleAddr: string, signer: any, priceUpdate: PriceUpdateParams): Promise<number | undefined> => {
+  const proxy = new web3.eth.Contract(proxyABI, proxyAddr);
+  const aggrAddr = await proxy.methods.aggregator().call();
+
   const aggrContract = new web3.eth.Contract(aggrABI, aggrAddr);
   const oracleState = await aggrContract.methods.oracleRoundState(oracleAddr, 0).call();
   if (!oracleState._eligibleToSubmit) {
     throw new Error('Not eligible to submit price.')
   }
-
+  
   // To make it integer
   const normalizedPrice = Math.round(priceUpdate.currentPrice * 1000);
 
