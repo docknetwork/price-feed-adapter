@@ -49,10 +49,10 @@ ts-node scripts/run-server.ts
 
 There are 2 jobspecs. Each of them is initiated by a cron trigger each minute. They assume the adapter has been deployed with the bridge named `dock_usd_bridge`.  
 [Spec 1](price-feed-job-spec-1.json) will always write on the chain.  
-[Spec 2](price-feed-job-spec-1.json) will write on the chain when either the price deviates by 1% or 3600 seconds (1 hour) has passed.
-
+[Spec 2](price-feed-job-spec-2.json) will write on the chain when either the price deviates by 1% or 3600 seconds (1 hour) has passed.
 
 ## Env variables
+
 The following environment variables need to be set for the adapter to work.
 
 ```
