@@ -2,7 +2,27 @@
 
 Fetches price from exchanges, takes median and writes them to chain. All the actions are written as small tasks.
 
-## To get price for DOCK/USD pair
+This repo holds several components:
+
+- the adapter, which is the js module in [`./src`](./src), gets deployed to a chainlink node (by node operators) under the bridge name `dock_usd_bridge`
+- the [jobspecs](#Jobspecs), which define when the adapter function get scheduled to run
+- the server, which acts as a middleware for price data APIs (Coinmarketcap, Coingecko, etc.), and exposes:
+  - each price data API endpoint
+  - an endpoint that returns the median of all these APIs' prices
+
+## Deploying the adapter
+
+The default adapter is the module in [`./src`](./src).
+This is for chainlink node operators to deploy on their node.
+
+This bridge should be deployed under the name `dock_usd_bridge`.
+This can be checked in the admin dashboard of the oracle's chainlink node.
+
+### Customizing the adapter deployment
+
+Alternatively, node operators can tweak the deployment and jobspec in the following ways:
+
+#### To get price for DOCK/USD pair
 
 ```js
 import { execute } from './adapter';
@@ -22,7 +42,7 @@ const data = await execute({ id: "1", data: {endpoint: MEDIAN_PRICE}}  as Adapte
 
 The `result` key of `data` will contain the price.
 
-## To write price for DOCK/USD pair on chain
+#### To write price for DOCK/USD pair on chain
 
 ```js
 import { execute, WRITE_CMC_PRICE, WRITE_MEDIAN_PRICE } from './adapter';
@@ -39,20 +59,20 @@ const data = await execute({ id: "1", data: {endpoint: WRITE_MEDIAN_PRICE, thres
 
 The `result` key of `data` will contain the block number.
 
+## Jobspecs
+
+There are 2 jobspecs. Each of them is initiated by a cron trigger each minute. They assume the adapter has been deployed with the bridge named `dock_usd_bridge`.  
+[Spec 1](price-feed-job-spec-1.json) will always write on the chain.  
+[Spec 2](price-feed-job-spec-2.json) will write on the chain when either the price deviates by 1% or 3600 seconds (1 hour) has passed.
+
 ## Running the server
 
 ```
 ts-node scripts/run-server.ts
 ```
 
-## Jobspecs
-
-There are 2 jobspecs. Each of them is initiated by a cron trigger each minute. They assume the adapter has been deployed with the bridge named `dock_usd_bridge`.  
-[Spec 1](price-feed-job-spec-1.json) will always write on the chain.  
-[Spec 2](price-feed-job-spec-1.json) will write on the chain when either the price deviates by 1% or 3600 seconds (1 hour) has passed.
-
-
 ## Env variables
+
 The following environment variables need to be set for the adapter to work.
 
 ```
