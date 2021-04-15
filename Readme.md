@@ -1,6 +1,6 @@
 # Price feed adapter
 
-Fetches price from exchanges, takes median and writes them to chain. All the actions are written as small tasks.
+Fetches price from exchanges, takes median and writes them to chain. Currently supported price sources are Coinmarketcap, Coingecko, Cryptocompare and Binance. All the actions are written as small tasks.
 
 This repo holds several components:
 
@@ -30,14 +30,14 @@ import { coinmarketcap } from './endpoint';
 import { coingecko } from './endpoint';
 
 // Get price from coinmarketcap
-const data = await execute({ id: "1", data: {endpoint: coinmarketcap.NAME}}  as AdapterRequest );
+const data = await execute({ id: "1", data: {endpoint: coinmarketcap.NAME}} as AdapterRequest );
 
 // Get price from coingecko
-const data = await execute({ id: "1", data: {endpoint: coingecko.NAME}}  as AdapterRequest );
+const data = await execute({ id: "1", data: {endpoint: coingecko.NAME}} as AdapterRequest );
 
 // To get median price from multiple exchanges, the choice of exchanges is hardcoded in code
 import { MEDIAN_PRICE } from './adapter';
-const data = await execute({ id: "1", data: {endpoint: MEDIAN_PRICE}}  as AdapterRequest );
+const data = await execute({ id: "1", data: {endpoint: MEDIAN_PRICE}} as AdapterRequest );
 ```
 
 The `result` key of `data` will contain the price.
@@ -48,17 +48,38 @@ The `result` key of `data` will contain the price.
 import { execute, WRITE_CMC_PRICE, WRITE_MEDIAN_PRICE } from './adapter';
 
 // To write coinmarketcap price
-const data = await execute({ id: "1", data: {endpoint: WRITE_CMC_PRICE}}  as AdapterRequest );
+const data = await execute({ id: "1", data: {endpoint: WRITE_CMC_PRICE}} as AdapterRequest );
 
 // To write median price
-const data = await execute({ id: "1", data: {endpoint: WRITE_MEDIAN_PRICE}}  as AdapterRequest );
+const data = await execute({ id: "1", data: {endpoint: WRITE_MEDIAN_PRICE}} as AdapterRequest );
 
 // To write the price on chain when the current price has either deviated by 5% or is stale by 30 seconds
-const data = await execute({ id: "1", data: {endpoint: WRITE_MEDIAN_PRICE, thresholdPct: 5, idleTime: 30}}  as AdapterRequest );
+const data = await execute({ id: "1", data: {endpoint: WRITE_MEDIAN_PRICE, thresholdPct: 5, idleTime: 30}} as AdapterRequest );
 ```
 
 The `result` key of `data` will contain the block number.
 
+## HTTP server
+
+Running the server. By default, runs at port 8080
+```
+ts-node scripts/run-server.ts
+```
+
+Eg. To fetch price at Binance, send GET request as
+```
+curl -X POST -H "Content-Type: application/json" http://localhost:8080 --data '{"id":"1","data": {"endpoint": "Binance"}}'
+```
+
+Eg. To fetch median price of all sources, send GET request as
+```
+curl -X POST -H "Content-Type: application/json" http://localhost:8080 --data '{"id":"1","data": {"endpoint": "median_price"}}'
+```
+
+Eg. To write median price of all sources on chain, send GET request as
+```
+curl -X POST -H "Content-Type: application/json" http://localhost:8080 --data '{"id":"1","data": {"endpoint": "write_median_price"}}'
+```
 ## Jobspecs
 
 There are 2 jobspecs. Each of them is initiated by a cron trigger each minute. They assume the adapter has been deployed with the bridge named `dock_usd_bridge`.  
