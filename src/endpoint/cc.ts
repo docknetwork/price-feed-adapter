@@ -1,35 +1,25 @@
 // Cryptocompare DOCK/USD price API
 
-import { Requester, Validator } from '@chainlink/external-adapter';
-import { ExecuteWithConfig, Config } from '../types';
+import fetch from "node-fetch";
+import { Pair, PairPrice, PriceFetcher } from "../types";
 
-export const NAME = 'Cryptocompare';
+export class CryptocompareFetcher extends PriceFetcher {
+  static NAME = "Cryptocompare";
 
-export const execute: ExecuteWithConfig<Config> = async (request, config) => {
-  const validator = new Validator(request)
-  if (validator.error) throw validator.error
+  async fetch(pair: Pair): Promise<PairPrice> {
+    const { from, to } = pair;
+    const url = "https://min-api.cryptocompare.com/data/price";
 
-  const jobRunID = validator.validated.id
-  const url = 'https://min-api.cryptocompare.com/data/price'
-  const fsym = 'DOCK'
-  const tsyms = 'USD'
+    const params = {
+      fsym: from,
+      tsyms: to,
+    };
 
-  const params = {
-    fsym,
-    tsyms,
+    const result = await fetch(url + "?" + new URLSearchParams(params), {
+      method: "GET",
+    });
+    const json = await result.json();
+
+    return { price: Number.parseFloat((json as any)[to]), pair };
   }
-
-  const options = {
-    url,
-    params,
-  }
-
-  const response = await Requester.request(options)
-  const result = Requester.validateResultNumber(response.data, [tsyms])
-
-  return Requester.success(jobRunID, {
-    data: config.verbose ? { ...response.data, result } : { result },
-    result,
-    status: 200,
-  })
 }

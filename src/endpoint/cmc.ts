@@ -1,41 +1,31 @@
 // Coinmarketcap DOCK/USD price API
 
-import { Requester, Validator } from '@chainlink/external-adapter';
-import { ExecuteWithConfig, Config } from '../types';
+import fetch from "node-fetch";
+import { Pair, PairPrice, PriceFetcher } from "../types";
 
-export const NAME = 'Coinmarketcap';
+export class CoinmarketcapFetcher extends PriceFetcher {
+  static NAME = "Coinmarketcap";
 
-export const execute: ExecuteWithConfig<Config> = async (request, config) => {
-  const validator = new Validator(request);
-  if (validator.error) throw validator.error;
-  
-  const jobRunID = validator.validated.id;
+  async fetch(pair: Pair): Promise<PairPrice> {
+    const { from, to } = pair;
+    const url =
+      "https://sandbox-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest";
 
-  const url = 'https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest';
-  const symbol = 'DOCK';
-  const convert = 'USD';
+    const params = {
+      symbol: from,
+      // this can be avoided as USD is default but still being explicit
+      convert: to,
+    };
 
-  const params = {
-    symbol,
-    // this can be avoided as USD is default but still being explicit
-    convert,
-  };
+    const result = await fetch(url + "?" + new URLSearchParams(params), {
+      method: "GET",
+      headers: {
+        'Accept': 'application/json',
+        "X-CMC_PRO_API_KEY": process.env.CMC_KEY,
+      },
+    });
+    const json = await result.json();
 
-  const options = {
-    ...config.api,  // Need the api object as it has header with the API key
-    url,
-    params,
-  };
-
-  const response = await Requester.request(options);
-  
-  // The price is found at path `data.DOCK.quote.USD.price` in response JSON
-  const result = Requester.validateResultNumber(response.data, ['data', 'DOCK', 'quote', 'USD', 'price']);
-
-  return Requester.success(jobRunID, {
-    data: config.verbose ? { ...response.data, result } : { result },
-    result,
-    status: 200,
-  });
-
+    return { price: Number.parseFloat((json as any).data[from].quote.USD.price), pair };
+  }
 }

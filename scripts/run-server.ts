@@ -10,7 +10,7 @@ import {execute} from '../src/adapter';
 const port = process.env.EA_PORT || 8080
 
 const app = express()
-app.use(express.json())
+app.use(express.text())
 
 
 app.post('/', async(req, res) => {

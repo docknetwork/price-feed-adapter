@@ -1,37 +1,36 @@
 // Coingecko DOCK/USD price API
 
-import { Requester, Validator } from '@chainlink/external-adapter';
-import { ExecuteWithConfig, Config } from '../types';
+import fetch from "node-fetch";
+import { Pair, PairPrice, PriceFetcher } from "../types";
 
-export const NAME = 'Coingecko';
+const SPECIALS = {
+  ETH: "ethereum",
+};
 
-export const execute: ExecuteWithConfig<Config> = async (request, config) => {
-  const validator = new Validator(request);
-  if (validator.error) throw validator.error;
+export class CoingeckoFetcher extends PriceFetcher {
+  static NAME = "Coingecko";
 
-  const jobRunID = validator.validated.id;
-  const url = 'https://api.coingecko.com/api/v3/simple/price';
-  const ids = 'DOCK';
-  const vs_currencies = 'USD';
+  async fetch(pair: Pair): Promise<PairPrice> {
+    let { from, to } = pair;
+    from = SPECIALS[from] || from;
+    to = SPECIALS[to] || to;
+    const url = "https://api.coingecko.com/api/v3/simple/price";
 
-  const params = {
-    ids,
-    vs_currencies,
-  };
+    const params = {
+      ids: from.toLowerCase(),
+      vs_currencies: to.toLowerCase(),
+    };
 
-  const options = {
-    url,
-    params,
-  };
+    const result = await fetch(url + "?" + new URLSearchParams(params), {
+      method: "GET",
+    });
+    const json = await result.json();
 
-  const response = await Requester.request(options);
-  
-  // The price is found at path `dock.usd` in response JSON
-  const result = Requester.validateResultNumber(response.data, ['dock', 'usd']);
-
-  return Requester.success(jobRunID, {
-    data: config.verbose ? { ...response.data, result } : { result },
-    result,
-    status: 200,
-  });
+    return {
+      price: Number.parseFloat(
+        (json as any)[from.toLowerCase()][to.toLowerCase()]
+      ),
+      pair,
+    };
+  }
 }

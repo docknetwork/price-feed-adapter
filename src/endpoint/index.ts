@@ -1,4 +1,4 @@
-export * as cryptocompare from './cc'
-export * as coingecko from './cg'
-export * as coinmarketcap from './cmc'
-export * as binance from './binance'
+export * from './cc'
+export * from './cg'
+export * from './cmc'
+export * from './binance'
