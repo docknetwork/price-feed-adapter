@@ -1,187 +1,114 @@
 import {
-  interval,
   from,
-  combineLatest,
-  lastValueFrom,
   zip,
   defer,
-  firstValueFrom,
   EMPTY,
   Observable,
-  merge,
   timer,
   of,
-  Subject,
-  pairs,
-  ReplaySubject,
-  BehaviorSubject,
   OperatorFunction,
-  connectable,
 } from "rxjs";
 import {
-  filter,
+  concatMap,
   map as mapRx,
-  mapTo,
-  mergeAll,
   mergeMap,
-  filter as filterRx,
-  mergeWith,
-  reduce,
   retry,
   switchMap,
-  withLatestFrom,
-  zipWith,
-  zipAll,
-  distinct,
-  concatMap,
   tap,
-  share,
-  connect,
-  multicast,
-  takeUntil,
-  shareReplay,
-  pluck,
 } from "rxjs/operators";
-import fetch from "node-fetch";
 import dock from "@docknetwork/sdk";
-import {
-  curry,
-  assoc,
-  whereEq,
-  toString,
-  equals,
-  eqBy,
-  prop,
-  pathEq,
-  where,
-  o,
-} from "ramda";
+import { curry, defaultTo } from "ramda";
 import {
   BinanceFetcher,
-  CoinmarketcapFetcher,
   CryptocompareFetcher,
   CoingeckoFetcher,
-} from "./endpoint";
-import { Pair, PairPrice, PairSource, PriceFetcher } from "./types";
+} from "./currency";
+import { Pair, PairPrice } from "./types";
+import { EtherChainPriceFetcher, GasStationPriceFetcher } from "./gas-price";
+import { fetchAveragePrices } from "./prices";
+import { batchExtrinsics } from "./helpers";
 
-const DOCK_USD = "DOCK/USD";
-const DOCK_ETH_GAS = "DOCK/ETH_GAS";
-const WATCH_TIME = 30e3;
+async function main() {
+  await dock.init({ endpoint: process.env.DOCK_RPC_ENDPOINT });
+  const initiator = dock.keyring.addFromUri(process.env.INITIATOR_ACCOUNT_URI);
+  dock.setAccount(initiator);
 
-const getPrice = async (pair) => {
-  //console.log(dock.api.rpc)
-  return 10;
-  return await dock.api.rpc.price_feed.price_feed_price(pair);
-};
+  const tokenEndpoints$ = from([
+    new BinanceFetcher(),
+    new CryptocompareFetcher(),
+    new CoingeckoFetcher(),
+  ]);
+  const gasEndpoints$ = from([
+    new GasStationPriceFetcher(),
+    new EtherChainPriceFetcher(),
+  ]);
 
-const fetchPrices = curry(
-  (
-    endpoints$: Observable<PriceFetcher>,
-    pairs$: Observable<Pair | PairSource>
-  ) =>
-    pairs$.pipe(
-      concatMap((value) =>
-        "publish" in value
-          ? of(
-              { pub: false, value: value.to },
-              { pub: false, value: value.from }
-            )
-          : of({ pub: true, value })
-      ),
-      distinct(o(JSON.stringify, prop("value"))),
-      mergeMap(({ pub, value: pair }) =>
-        endpoints$.pipe(
-          mergeMap((endpoint) => from(endpoint.fetch(pair))),
-          filterRx(({ price: value }) => value && Number.isFinite(value)),
-          reduce(
-            ({ amount, total }, { price }) => ({
-              amount: amount + 1,
-              total: total + price,
-            }),
-            { amount: 0, total: 0 }
-          ),
-          mapRx(({ amount, total }) => ({
-            price: total / amount,
-            pair,
-          })),
-          mapRx((value) => ({ pub, value }))
-        )
-      )
-    )
-);
+  const gasPrice$ = defer(
+    (): Observable<PairPrice> =>
+      of({ from: "GAS", to: "ETH" }).pipe(fetchAveragePrices(gasEndpoints$))
+  );
 
-const resolveSources = curry(
-  (prices$: Observable<PairPrice>, pairs$: Observable<PairSource>) =>
-    pairs$.pipe(
-      mergeMap((value: PairSource) =>
-        value
-          .publish(
-            prices$.pipe(filterRx(whereEq({ pair: value.from }))),
-            prices$.pipe(filterRx(whereEq({ pair: value.to })))
-          )
-          .pipe(mapRx((value) => ({ pub: true, value })))
-      )
-    )
-);
+  const dockToUsd = { from: "DOCK", to: "USD", decimals: 4, minDiff: 100 };
 
-const getAveragePrices = curry(
-  (
-    endpoints$: Observable<PriceFetcher>,
-    pairs$: Observable<Pair | PairSource>
-  ): Observable<PairPrice> => {
-    interface PubValue<T> {
-      pub: boolean;
-      value: T;
-    }
+  const pairs$ = from([
+    dockToUsd,
+    {
+      from: dockToUsd,
+      to: { from: "ETH", to: "USD" },
+      publish: (from$: Observable<PairPrice>, to$: Observable<PairPrice>) =>
+        zip([from$, to$, gasPrice$]).pipe(
+          mapRx(([dockUsd, ethUsd, gas]) => ({
+            price: ((ethUsd.price * gas.price) / dockUsd.price) * 1e6,
+            pair: { from: "GAS", to: "DOCK", decimals: 6, minDiff: 1e6 },
+          }))
+        ),
+    },
+  ]);
 
-    const pairsSubject = new Subject<PubValue<PairPrice>>();
-    const result$ = pairsSubject.pipe(shareReplay(5e2));
-
-    defer(() => pairs$)
+  await new Promise((resolve, reject) => {
+    timer(0, +process.env.WATCH_TIME || 6e4 * 5)
       .pipe(
-        connect((pairs$) =>
-          merge(
-            pairs$.pipe(fetchPrices(endpoints$)),
-            pairs$.pipe(
-              filterRx((value) => "publish" in value),
-              resolveSources(result$.pipe(pluck("value")))
-            )
-          )
-        )
+        mapRx(() => pairs$),
+        watchDockPairs(fetchAveragePrices(tokenEndpoints$), initiator)
       )
-      .subscribe(pairsSubject);
-
-    return result$.pipe(filterRx(prop("pub")), pluck("value"));
-  }
-);
-
-export function switchMapBy<T, R>(
-  pickItem: (val: T) => any,
-  mapFn: (val: T) => Observable<R> | Promise<R>
-): OperatorFunction<T, R> {
-  return (input$) =>
-    input$.pipe(
-      mergeMap((val) =>
-        from(mapFn(val)).pipe(
-          takeUntil(input$.pipe(filter((i) => eqBy(pickItem, i, val))))
-        )
-      )
-    );
+      .subscribe({ complete: () => resolve(null), error: reject });
+  });
 }
 
-const watch = curry(
+/**
+ * Fetches pair price from the `Dock`.
+ */
+const getDockPairPrice = async (pair) => {
+  const opt = await dock.api.query.priceFeedModule.price(pair);
+  if (opt.isNone) {
+    return null;
+  }
+  const value = opt.unwrap();
+
+  return {
+    amount: value.get("amount"),
+    decimals: value.get("decimals"),
+    blockNumber: value.get("blockNumber"),
+  };
+};
+
+/**
+ * Watches prices for the given pairs, compares with the current stored on the `Dock` side,
+ * and if change is greater than minimum, performs batched updates.
+ */
+const watchDockPairs = curry(
   (
-    getAverages: (pairs$: Observable<Pair>) => Observable<PairPrice>,
+    fetchAverages: OperatorFunction<Pair, PairPrice>,
     initiator: any,
     pairBuckets$: Observable<Observable<Pair>>
   ) =>
     pairBuckets$.pipe(
       switchMap((pairs$) =>
         pairs$.pipe(
-          getAverages,
+          fetchAverages,
           mergeMap(({ price: avg, pair }) =>
-            from(getPrice(pair)).pipe(
-              switchMap((current: number) => {
+            from(getDockPairPrice(pair)).pipe(
+              switchMap((current) => {
                 console.log(
                   "Pair average for",
                   pair.from,
@@ -191,72 +118,44 @@ const watch = curry(
                   avg
                 );
 
-                if (Math.abs(current - avg * pair.multiplier) > 10) {
-                  return defer(() =>
-                    from(
-                      dock.api.tx.priceFeedModule
-                        .setPrice(pair, avg * pair.multiplier)
-                        .signAndSend(initiator)
+                const decimals = defaultTo(0, pair.decimals);
+                const minDiff = defaultTo(0, pair.minDiff);
+
+                if (
+                  current == null ||
+                  Math.abs(
+                    current.amount / 10 ** (current.decimals - decimals) -
+                      avg * 10 ** decimals
+                  ) > minDiff
+                ) {
+                  console.log("Updating ", pair.from, "/", pair.to);
+                  return of(
+                    dock.api.tx.priceFeedModule.setPrice(
+                      pair,
+                      avg * 10 ** decimals,
+                      decimals
                     )
-                  ).pipe(retry(3));
+                  );
                 } else {
+                  console.log("Skipping", pair.from, "/", pair.to);
                   return EMPTY;
                 }
               })
+            )
+          ),
+          batchExtrinsics(dock.api, 5),
+          concatMap((batch: any) =>
+            from(batch.signAndSend(initiator)).pipe(
+              tap((tx) =>
+                console.log("Transaction sent: ", (tx.toString as any)("hex"))
+              ),
+              retry(3)
             )
           )
         )
       )
     )
 );
-
-const getGasPrice = async () => {
-  const gasPrice =
-    (
-      await (
-        (await fetch("https://ethgasstation.info/api/ethgasAPI.json")) as any
-      ).json()
-    ).average / 1e11;
-
-  return gasPrice;
-};
-
-async function main() {
-  await dock.init({ endpoint: "localhost:9944" });
-  const initiator = dock.keyring.addFromUri("//Alice");
-  dock.setAccount(initiator);
-
-  const endpoints$ = from([
-    new BinanceFetcher(),
-    new CryptocompareFetcher(),
-    new CoinmarketcapFetcher(),
-    new CoingeckoFetcher(),
-  ]);
-  const gasPrice$ = defer(() => from(getGasPrice()));
-  const pairs$ = from([
-    { from: "DOCK", to: "USD", multiplier: 1e2 },
-    {
-      from: { from: "DOCK", to: "USD", multiplier: 1e2 },
-      to: { from: "ETH", to: "USD", multiplier: 1e2 },
-      publish: (from$: Observable<PairPrice>, to$: Observable<PairPrice>) =>
-        zip(from$, to$, gasPrice$).pipe(
-          mapRx(([dockUsd, ethUsd, gasPrice]) => ({
-            price: dockUsd.price / ethUsd.price / gasPrice,
-            pair: { from: "DOCK", to: "GAS", multiplier: 1e3 },
-          }))
-        ),
-    },
-  ]);
-
-  await new Promise((resolve, reject) => {
-    interval(WATCH_TIME)
-      .pipe(
-        mapRx(() => pairs$),
-        watch(getAveragePrices(endpoints$), initiator)
-      )
-      .subscribe({ complete: () => resolve(null), error: reject });
-  });
-}
 
 main()
   .then(() => process.exit(0))

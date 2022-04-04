@@ -9,7 +9,7 @@ export class CoinmarketcapFetcher extends PriceFetcher {
   async fetch(pair: Pair): Promise<PairPrice> {
     const { from, to } = pair;
     const url =
-      "https://sandbox-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest";
+      "https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest";
 
     const params = {
       symbol: from,
@@ -21,11 +21,11 @@ export class CoinmarketcapFetcher extends PriceFetcher {
       method: "GET",
       headers: {
         'Accept': 'application/json',
-        "X-CMC_PRO_API_KEY": process.env.CMC_KEY,
+        "X-CMC_PRO_API_KEY": process.env.CMC_API_KEY,
       },
     });
     const json = await result.json();
 
-    return { price: Number.parseFloat((json as any).data[from].quote.USD.price), pair };
+    return { price: Number.parseFloat((json as any).data[from].quote[to].price), pair };
   }
 }

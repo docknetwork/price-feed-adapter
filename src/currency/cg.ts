@@ -3,7 +3,7 @@
 import fetch from "node-fetch";
 import { Pair, PairPrice, PriceFetcher } from "../types";
 
-const SPECIALS = {
+const REPLACE = {
   ETH: "ethereum",
 };
 
@@ -12,8 +12,9 @@ export class CoingeckoFetcher extends PriceFetcher {
 
   async fetch(pair: Pair): Promise<PairPrice> {
     let { from, to } = pair;
-    from = SPECIALS[from] || from;
-    to = SPECIALS[to] || to;
+    from = REPLACE[from] || from;
+    to = REPLACE[to] || to;
+    
     const url = "https://api.coingecko.com/api/v3/simple/price";
 
     const params = {

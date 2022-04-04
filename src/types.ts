@@ -3,7 +3,8 @@ import { Observable } from "rxjs";
 export interface Pair {
     from: string,
     to: string,
-    multiplier: number
+    decimals?: number,
+    minDiff?: number
 }
 
 export interface PairSource {
