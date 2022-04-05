@@ -1,7 +1,8 @@
-// Coinmarketcap DOCK/USD price API
+// Coinmarketcap price API
 
 import fetch from "node-fetch";
-import { Pair, PriceFetcher } from "../types";
+import { Pair } from "../../types";
+import { PriceFetcher } from "../price-fetcher";
 
 export class CoinmarketcapFetcher extends PriceFetcher {
   static NAME = "Coinmarketcap";

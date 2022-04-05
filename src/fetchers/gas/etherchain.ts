@@ -1,10 +1,11 @@
 import fetch from "node-fetch";
-import { Pair, GasPriceFetcher } from "../types";
+import { Pair } from "../../types";
+import { GasPriceFetcher } from '../price-fetcher'
 
-export class EtherChainPriceFetcher extends GasPriceFetcher {
+export class EtherChainGasPriceFetcher extends GasPriceFetcher {
   static NAME = "EtherChain";
 
-  async _fetchPrice(pair: Pair): Promise<number> {
+  async _fetchPrice(_: Pair): Promise<number> {
     const response = await fetch(
       "https://www.etherchain.org/api/gasPriceOracle"
     );

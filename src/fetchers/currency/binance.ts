@@ -1,7 +1,8 @@
-// Binance DOCK/USDT price API
+// Binance price API
 
 import fetch from "node-fetch";
-import { Pair, PriceFetcher } from "../types";
+import { Pair } from "../../types";
+import { PriceFetcher } from "../price-fetcher";
 
 export class BinanceFetcher extends PriceFetcher {
   static NAME = "Binance";

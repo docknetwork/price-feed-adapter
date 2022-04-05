@@ -20,8 +20,9 @@ import {
   shareReplay,
   Subject,
 } from "rxjs";
-import { eqPairs } from "./helpers";
-import { PriceFetcher, Pair, PairPrice, PairSource } from "./types";
+import { Pair, PairPrice, PairSource } from "./types";
+import { PriceFetcher } from "./fetchers";
+import { pairId } from "./helpers";
 
 interface PubValue<T> {
   pub: boolean;
@@ -48,14 +49,12 @@ export const fetchAveragePrices = curry(
           merge(
             pairs$.pipe(
               concatMap((value) =>
-                "publish" in value
-                  ? of(value.to, value.from).pipe(mapRx(priv))
-                  : of(pub(value))
+                "deps" in value ? value.deps.pipe(mapRx(priv)) : of(pub(value))
               ),
               fetchAndAccumulateAveragePrices(tokenEndpoints$)
             ),
             pairs$.pipe(
-              filterRx((value) => "publish" in value),
+              filterRx((value) => "deps" in value),
               resolveSources(result$.pipe(pluck("value")))
             )
           )
@@ -73,14 +72,7 @@ export const fetchAveragePrices = curry(
 const resolveSources = curry(
   (prices$: Observable<PairPrice>, pairs$: Observable<PairSource>) =>
     pairs$.pipe(
-      mergeMap((value: PairSource) =>
-        value
-          .publish(
-            prices$.pipe(filterRx(where({ pair: eqPairs(value.from) }))),
-            prices$.pipe(filterRx(where({ pair: eqPairs(value.to) })))
-          )
-          .pipe(mapRx(pub))
-      )
+      mergeMap((value: PairSource) => value.publish(prices$).pipe(mapRx(pub)))
     )
 );
 
@@ -94,15 +86,15 @@ const fetchAndAccumulateAveragePrices = curry(
   ): Observable<PubValue<PairPrice>> =>
     pairs$.pipe(
       mergeScan((acc, { pub, value: pair }) => {
-        const key = JSON.stringify(pair);
+        const key = pairId(pair);
 
         let fetched: Promise<PubValue<PairPrice>> = acc[key];
         if (fetched) {
           return from(fetched).pipe(
-            switchMap((value) => {
-              if (pub && !value.pub) {
-                value.pub = true;
-                return of(value);
+            switchMap((stored) => {
+              if (pub && !stored.pub) {
+                stored.pub = true;
+                return of({ price: stored.value.price, pair });
               }
               return EMPTY;
             })

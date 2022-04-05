@@ -1,29 +1,35 @@
-import { curry, eqBy, props } from "ramda";
+import { ApiPromise } from "@polkadot/api";
+import { complement, curry, eqBy, isEmpty, join, o, props, where } from "ramda";
 import {
   Observable,
   OperatorFunction,
   mergeMap,
-  from,
   takeUntil,
   filter,
   map as mapRx,
-  bufferCount,
+  filter as filterRx,
+  bufferTime,
 } from "rxjs";
+import { BasicExtrinsic, Pair, PairPrice } from "./types";
 
+/**
+ * Acts as `switchMap` but operates over multiple stream switching by `pickItem` value.
+ */
 export function switchMapBy<T, R>(
-  pickItem: (val: T) => any,
-  mapFn: (val: T) => Observable<R> | Promise<R>
+  pickItem: <V>(val: T) => V,
+  mapFn: (val: T) => Observable<R>
 ): OperatorFunction<T, R> {
   return (input$) =>
     input$.pipe(
       mergeMap((val) =>
-        from(mapFn(val)).pipe(
-          takeUntil(input$.pipe(filter((i) => eqBy(pickItem, i, val))))
-        )
+        mapFn(val).pipe(takeUntil(input$.pipe(filter(eqBy(pickItem, val)))))
       )
     );
 }
 
+/**
+ * Asserts value to be finite
+ */
 export const assertFinite = curry((msg, value) => {
   if (!isFinite(value)) {
     throw new Error(typeof msg === "function" ? msg() : msg);
@@ -31,21 +37,41 @@ export const assertFinite = curry((msg, value) => {
 });
 
 /**
+ * Picks prices for the given pair from provided observable.
+ */
+export const pickPairPrice = curry(
+  (pair: Pair, pairPrices$: Observable<PairPrice>): Observable<PairPrice> =>
+    pairPrices$.pipe(filterRx(where({ pair: eqPairs(pair) })))
+);
+
+/**
  * Batches extrinsics received from the observable.
- *
- * @param {*} api
- * @param {number} limit
- * @param {Observable<import("@polkadot/types/interfaces").Extrinsic>} extrs$
- * @returns {Observable<import("@polkadot/types/interfaces").Extrinsic>}
  */
 export const batchExtrinsics = curry(
-  <T>(api, limit: number, extrs$: Observable<T>) =>
+  <A extends ApiPromise>(
+    api: A,
+    time: number,
+    limit: number,
+    extrs$: Observable<BasicExtrinsic>
+  ): Observable<BasicExtrinsic> =>
     extrs$.pipe(
-      bufferCount(limit),
+      bufferTime(time, null, limit),
+      filterRx(complement(isEmpty)),
       mapRx((batch) =>
         batch.length === 1 ? batch[0] : api.tx.utility.batchAll(batch)
       )
     )
 );
 
-export const eqPairs = eqBy(props(["from", "to"]));
+/**
+ * Returns unique id of pair in format %FROM%/%TO%
+ */
+export const pairId: (pair: Pair) => string = o(
+  join("/"),
+  props(["from", "to"])
+);
+
+/**
+ * Checks if two pairs are equal by `from`-`to` properties.
+ */
+export const eqPairs = eqBy(pairId);

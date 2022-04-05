@@ -1,7 +1,8 @@
-// Coingecko DOCK/USD price API
+// Coingecko price API
 
 import fetch from "node-fetch";
-import { Pair, PriceFetcher } from "../types";
+import { Pair } from "../../types";
+import { PriceFetcher } from "../price-fetcher";
 
 export class CoingeckoFetcher extends PriceFetcher {
   static NAME = "Coingecko";

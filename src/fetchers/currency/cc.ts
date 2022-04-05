@@ -1,7 +1,8 @@
-// Cryptocompare DOCK/USD price API
+// Cryptocompare price API
 
 import fetch from "node-fetch";
-import { Pair, PriceFetcher } from "../types";
+import { Pair } from "../../types";
+import { PriceFetcher } from "../price-fetcher";
 
 export class CryptocompareFetcher extends PriceFetcher {
   static NAME = "Cryptocompare";
