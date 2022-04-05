@@ -1,20 +1,16 @@
 import fetch from "node-fetch";
-import { Pair, PairPrice, PriceFetcher } from "../types";
+import { Pair, GasPriceFetcher } from "../types";
 
-export class GasStationPriceFetcher extends PriceFetcher {
+export class GasStationPriceFetcher extends GasPriceFetcher {
   static NAME = "GasStation";
 
-  async fetch(pair: Pair): Promise<PairPrice> {
-    if (pair.from !== "GAS" || pair.to !== "ETH") {
-      throw new Error("Expected ETH-GAS pair only");
-    }
-
+  async _fetchPrice(pair: Pair): Promise<number> {
     const response = await fetch(
       "https://ethgasstation.info/api/ethgasAPI.json"
     );
     const json = await response.json();
     const price = json.average / 1e10;
 
-    return { price, pair };
+    return price;
   }
 }

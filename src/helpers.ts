@@ -24,6 +24,12 @@ export function switchMapBy<T, R>(
     );
 }
 
+export const assertFinite = curry((msg, value) => {
+  if (!isFinite(value)) {
+    throw new Error(typeof msg === "function" ? msg() : msg);
+  }
+});
+
 /**
  * Batches extrinsics received from the observable.
  *

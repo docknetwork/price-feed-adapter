@@ -9,6 +9,7 @@ import {
   OperatorFunction,
 } from "rxjs";
 import {
+  catchError,
   concatMap,
   map as mapRx,
   mergeMap,
@@ -26,7 +27,7 @@ import {
 import { Pair, PairPrice } from "./types";
 import { EtherChainPriceFetcher, GasStationPriceFetcher } from "./gas-price";
 import { fetchAveragePrices } from "./prices";
-import { batchExtrinsics } from "./helpers";
+import { assertFinite, batchExtrinsics } from "./helpers";
 
 async function main() {
   await dock.init({ endpoint: process.env.DOCK_RPC_ENDPOINT });
@@ -48,7 +49,7 @@ async function main() {
       of({ from: "GAS", to: "ETH" }).pipe(fetchAveragePrices(gasEndpoints$))
   );
 
-  const dockToUsd = { from: "DOCK", to: "USD", decimals: 4, minDiff: 100 };
+  const dockToUsd = { from: "DOCK", to: "USD", decimals: 4, maxDiff: 100 };
 
   const pairs$ = from([
     dockToUsd,
@@ -59,7 +60,7 @@ async function main() {
         zip([from$, to$, gasPrice$]).pipe(
           mapRx(([dockUsd, ethUsd, gas]) => ({
             price: ((ethUsd.price * gas.price) / dockUsd.price) * 1e6,
-            pair: { from: "GAS", to: "DOCK", decimals: 6, minDiff: 1e6 },
+            pair: { from: "GAS", to: "DOCK", decimals: 3, maxDiff: 1e3 },
           }))
         ),
     },
@@ -93,6 +94,61 @@ const getDockPairPrice = async (pair) => {
 };
 
 /**
+ * Updates pair price if difference between the given and current stored is greater than specified `maxDiff`.
+ */
+const updatePairPrice = ({ price: nextPrice, pair }) =>
+  from(getDockPairPrice(pair)).pipe(
+    switchMap((cur) => {
+      const assertAmount = assertFinite(
+        () =>
+          `Failed to calculate price for ${JSON.stringify(
+            pair
+          )}: current is ${JSON.stringify(cur)}, next is ${JSON.stringify(
+            nextPrice
+          )}`
+      );
+
+      const decimals = defaultTo(0, pair.decimals);
+      const maxDiff = defaultTo(0, pair.maxDiff);
+      const nextAmount = nextPrice * 10 ** decimals;
+      assertAmount(nextAmount);
+
+      console.log("New price for", pair.from, "/", pair.to, ":", nextPrice);
+
+      let update;
+      if (cur == null) {
+        update = true;
+      } else {
+        const curAmount = cur.amount / 10 ** (cur.decimals - decimals);
+        assertAmount(curAmount);
+
+        const diff = Math.abs(curAmount - nextAmount);
+        update = diff > maxDiff;
+
+        console.log("-- On-chain average is", curAmount / 10 ** decimals);
+        console.log(
+          "-- Difference is",
+          diff / 10 ** decimals,
+          "while allowed is",
+          maxDiff / 10 ** decimals
+        );
+      }
+
+      if (update) {
+        console.log("-- Updating");
+
+        return of(
+          dock.api.tx.priceFeedModule.setPrice(pair, nextAmount, decimals)
+        );
+      } else {
+        console.log("-- Skipping");
+
+        return EMPTY;
+      }
+    })
+  );
+
+/**
  * Watches prices for the given pairs, compares with the current stored on the `Dock` side,
  * and if change is greater than minimum, performs batched updates.
  */
@@ -106,49 +162,17 @@ const watchDockPairs = curry(
       switchMap((pairs$) =>
         pairs$.pipe(
           fetchAverages,
-          mergeMap(({ price: avg, pair }) =>
-            from(getDockPairPrice(pair)).pipe(
-              switchMap((current) => {
-                console.log(
-                  "Pair average for",
-                  pair.from,
-                  "/",
-                  pair.to,
-                  ": ",
-                  avg
-                );
-
-                const decimals = defaultTo(0, pair.decimals);
-                const minDiff = defaultTo(0, pair.minDiff);
-
-                if (
-                  current == null ||
-                  Math.abs(
-                    current.amount / 10 ** (current.decimals - decimals) -
-                      avg * 10 ** decimals
-                  ) > minDiff
-                ) {
-                  console.log("Updating ", pair.from, "/", pair.to);
-                  return of(
-                    dock.api.tx.priceFeedModule.setPrice(
-                      pair,
-                      avg * 10 ** decimals,
-                      decimals
-                    )
-                  );
-                } else {
-                  console.log("Skipping", pair.from, "/", pair.to);
-                  return EMPTY;
-                }
-              })
-            )
-          ),
+          mergeMap(updatePairPrice),
           batchExtrinsics(dock.api, 5),
           concatMap((batch: any) =>
             from(batch.signAndSend(initiator)).pipe(
               tap((tx) =>
                 console.log("Transaction sent: ", (tx.toString as any)("hex"))
               ),
+              catchError((err) => {
+                console.error(err);
+                throw err;
+              }),
               retry(3)
             )
           )

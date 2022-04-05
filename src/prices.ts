@@ -52,7 +52,7 @@ export const fetchAveragePrices = curry(
                   ? of(value.to, value.from).pipe(mapRx(priv))
                   : of(pub(value))
               ),
-              innerFetchPrices(tokenEndpoints$)
+              fetchAndAccumulateAveragePrices(tokenEndpoints$)
             ),
             pairs$.pipe(
               filterRx((value) => "publish" in value),
@@ -71,23 +71,23 @@ export const fetchAveragePrices = curry(
  * Resolves pair source from the dependent pairs.
  */
 const resolveSources = curry(
-    (prices$: Observable<PairPrice>, pairs$: Observable<PairSource>) =>
-      pairs$.pipe(
-        mergeMap((value: PairSource) =>
-          value
-            .publish(
-              prices$.pipe(filterRx(where({ pair: eqPairs(value.from) }))),
-              prices$.pipe(filterRx(where({ pair: eqPairs(value.to) })))
-            )
-            .pipe(mapRx(pub))
-        )
+  (prices$: Observable<PairPrice>, pairs$: Observable<PairSource>) =>
+    pairs$.pipe(
+      mergeMap((value: PairSource) =>
+        value
+          .publish(
+            prices$.pipe(filterRx(where({ pair: eqPairs(value.from) }))),
+            prices$.pipe(filterRx(where({ pair: eqPairs(value.to) })))
+          )
+          .pipe(mapRx(pub))
       )
-  );
+    )
+);
 
 /**
  * Fetches every unique pair exactly once for each endpoint, collects results to form an average for each pair.
  */
-const innerFetchPrices = curry(
+const fetchAndAccumulateAveragePrices = curry(
   (
     fetchers$: Observable<PriceFetcher>,
     pairs$: Observable<PubValue<Pair>>

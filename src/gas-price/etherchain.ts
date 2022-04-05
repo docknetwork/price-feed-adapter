@@ -1,20 +1,16 @@
 import fetch from "node-fetch";
-import { Pair, PairPrice, PriceFetcher } from "../types";
+import { Pair, GasPriceFetcher } from "../types";
 
-export class EtherChainPriceFetcher extends PriceFetcher {
+export class EtherChainPriceFetcher extends GasPriceFetcher {
   static NAME = "EtherChain";
 
-  async fetch(pair: Pair): Promise<PairPrice> {
-    if (pair.from !== "GAS" || pair.to !== "ETH") {
-      throw new Error("Expected ETH-GAS pair only");
-    }
-
+  async _fetchPrice(pair: Pair): Promise<number> {
     const response = await fetch(
       "https://www.etherchain.org/api/gasPriceOracle"
     );
     const json = await response.json();
     const price = json.currentBaseFee / 1e9;
 
-    return { price, pair };
+    return price;
   }
 }

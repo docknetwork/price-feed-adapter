@@ -1,20 +1,18 @@
 // Coingecko DOCK/USD price API
 
 import fetch from "node-fetch";
-import { Pair, PairPrice, PriceFetcher } from "../types";
-
-const REPLACE = {
-  ETH: "ethereum",
-};
+import { Pair, PriceFetcher } from "../types";
 
 export class CoingeckoFetcher extends PriceFetcher {
   static NAME = "Coingecko";
+  static REPLACEMENTS = Object.setPrototypeOf(
+    {
+      ETH: "ethereum",
+    },
+    null
+  );
 
-  async fetch(pair: Pair): Promise<PairPrice> {
-    let { from, to } = pair;
-    from = REPLACE[from] || from;
-    to = REPLACE[to] || to;
-    
+  async _fetchPrice({ from, to }: Pair): Promise<number> {
     const url = "https://api.coingecko.com/api/v3/simple/price";
 
     const params = {
@@ -27,11 +25,8 @@ export class CoingeckoFetcher extends PriceFetcher {
     });
     const json = await result.json();
 
-    return {
-      price: Number.parseFloat(
-        (json as any)[from.toLowerCase()][to.toLowerCase()]
-      ),
-      pair,
-    };
+    return Number.parseFloat(
+      (json as any)[from.toLowerCase()][to.toLowerCase()]
+    );
   }
 }

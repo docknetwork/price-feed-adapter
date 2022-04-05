@@ -1,13 +1,12 @@
 // Cryptocompare DOCK/USD price API
 
 import fetch from "node-fetch";
-import { Pair, PairPrice, PriceFetcher } from "../types";
+import { Pair, PriceFetcher } from "../types";
 
 export class CryptocompareFetcher extends PriceFetcher {
   static NAME = "Cryptocompare";
 
-  async fetch(pair: Pair): Promise<PairPrice> {
-    const { from, to } = pair;
+  async _fetchPrice({ from, to }: Pair): Promise<number> {
     const url = "https://min-api.cryptocompare.com/data/price";
 
     const params = {
@@ -20,6 +19,6 @@ export class CryptocompareFetcher extends PriceFetcher {
     });
     const json = await result.json();
 
-    return { price: Number.parseFloat((json as any)[to]), pair };
+    return Number.parseFloat((json as any)[to]);
   }
 }
