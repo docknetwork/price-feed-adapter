@@ -3,22 +3,31 @@ import { Pair, PairPrice } from "../types";
 
 export class PriceFetcher {
   static NAME: string;
-  static REPLACEMENTS: { [key: string]: string; __proto__: null } =
+  static SYMBOL_REPLACEMENTS: { [key: string]: string; __proto__: null } =
     Object.create(null);
 
   constructor() {}
 
-  async fetch(pair: Pair): Promise<PairPrice> {
+  async fetchPrice(pair: Pair): Promise<PairPrice> {
     const { from, to } = pair;
-    const price = await this._fetchPrice({
-      from: propOr(from, from, (this.constructor as any).REPLACEMENTS),
-      to: propOr(to, to, (this.constructor as any).REPLACEMENTS),
+
+    const price = await this.requestPrice({
+      from: this.replaceSymbol(from),
+      to: this.replaceSymbol(to),
     });
 
     return { price, pair };
   }
 
-  async _fetchPrice(_pair: Pair): Promise<number> {
+  private replaceSymbol(value: string): string {
+    return propOr(
+      value,
+      value,
+      (this.constructor as typeof PriceFetcher).SYMBOL_REPLACEMENTS
+    );
+  }
+
+  protected async requestPrice(_pair: Pair): Promise<number> {
     throw new Error("Unimplemented");
   }
 }
@@ -28,11 +37,11 @@ export class GasPriceFetcher extends PriceFetcher {
     super();
   }
 
-  async fetch(pair: Pair): Promise<PairPrice> {
+  async fetchPrice(pair: Pair): Promise<PairPrice> {
     if (pair.from !== "GAS" || pair.to !== "ETH") {
       throw new Error("Expected GAS-ETH pair only");
     }
 
-    return super.fetch(pair);
+    return super.fetchPrice(pair);
   }
 }

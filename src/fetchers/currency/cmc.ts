@@ -7,7 +7,7 @@ import { PriceFetcher } from "../price-fetcher";
 export class CoinmarketcapFetcher extends PriceFetcher {
   static NAME = "Coinmarketcap";
 
-  async _fetchPrice({ from, to }: Pair): Promise<number> {
+  protected async requestPrice({ from, to }: Pair): Promise<number> {
     const url =
       "https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest";
 

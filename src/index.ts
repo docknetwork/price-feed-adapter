@@ -1,12 +1,12 @@
 import {
   from,
-  zip,
   defer,
   EMPTY,
   Observable,
   timer,
   of,
   OperatorFunction,
+  combineLatest,
 } from "rxjs";
 import {
   catchError,
@@ -33,10 +33,11 @@ import {
 import { fetchAveragePrices } from "./prices";
 import { assertFinite, batchExtrinsics, pickPairPrice } from "./helpers";
 import { ApiPromise } from "@polkadot/api";
+import { AddressOrPair } from "@polkadot/api/types";
 
 async function main() {
   await dock.init({ endpoint: process.env.DOCK_RPC_ENDPOINT });
-  const initiator = dock.keyring.addFromUri(process.env.INITIATOR_ACCOUNT_URI);
+  const initiator = dock.keyring.addFromUri(process.env.INITIATOR_ACCOUNT_URI) as AddressOrPair;
   dock.setAccount(initiator);
 
   const tokenEndpoints$ = from([
@@ -78,7 +79,7 @@ async function main() {
           pair: { from: "GAS", to: "DOCK", decimals: 3, maxDiff: 1e3 },
         });
 
-        return zip([dockUsd$, ethUsd$, gasPrice$]).pipe(
+        return combineLatest([dockUsd$, ethUsd$, gasPrice$]).pipe(
           mapRx(apply(calcGasDock))
         );
       },
@@ -180,14 +181,14 @@ const updatePairPrice = curry(
 const watchDockPairs = curry(
   (
     fetchAverages: OperatorFunction<Pair, PairPrice>,
-    initiator: any,
+    initiator: AddressOrPair,
     pairBuckets$: Observable<Observable<Pair>>
   ) =>
     pairBuckets$.pipe(
       switchMap((pairs$) =>
         pairs$.pipe(
           fetchAverages,
-          mergeMap(updatePairPrice(dock.api as any)),
+          mergeMap(updatePairPrice(dock.api)),
           batchExtrinsics(dock.api, 1e3, 5),
           concatMap((batch: BasicExtrinsic) =>
             from(batch.signAndSend(initiator)).pipe(

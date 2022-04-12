@@ -7,7 +7,7 @@ import { PriceFetcher } from "../price-fetcher";
 export class CryptocompareFetcher extends PriceFetcher {
   static NAME = "Cryptocompare";
 
-  async _fetchPrice({ from, to }: Pair): Promise<number> {
+  protected async requestPrice({ from, to }: Pair): Promise<number> {
     const url = "https://min-api.cryptocompare.com/data/price";
 
     const params = {

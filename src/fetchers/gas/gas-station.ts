@@ -1,11 +1,11 @@
 import fetch from "node-fetch";
 import { Pair } from "../../types";
-import { GasPriceFetcher } from '../price-fetcher'
+import { GasPriceFetcher } from "../price-fetcher";
 
 export class GasStationGasPriceFetcher extends GasPriceFetcher {
   static NAME = "GasStation";
 
-  async _fetchPrice(_: Pair): Promise<number> {
+  protected async requestPrice(_: Pair): Promise<number> {
     const response = await fetch(
       "https://ethgasstation.info/api/ethgasAPI.json"
     );

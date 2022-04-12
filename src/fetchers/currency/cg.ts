@@ -6,14 +6,14 @@ import { PriceFetcher } from "../price-fetcher";
 
 export class CoingeckoFetcher extends PriceFetcher {
   static NAME = "Coingecko";
-  static REPLACEMENTS = Object.setPrototypeOf(
+  static SYMBOL_REPLACEMENTS = Object.setPrototypeOf(
     {
       ETH: "ethereum",
     },
     null
   );
 
-  async _fetchPrice({ from, to }: Pair): Promise<number> {
+  protected async requestPrice({ from, to }: Pair): Promise<number> {
     const url = "https://api.coingecko.com/api/v3/simple/price";
 
     const params = {

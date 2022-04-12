@@ -1,4 +1,4 @@
-import { curry, prop, where, whereEq } from "ramda";
+import { curry, prop } from "ramda";
 import {
   Observable,
   mergeScan,
@@ -29,8 +29,8 @@ interface PubValue<T> {
   value: T;
 }
 
-const pub = <T>(value): PubValue<T> => ({ pub: true, value });
-const priv = <T>(value): PubValue<T> => ({ pub: false, value });
+const pub = <T>(value: T): PubValue<T> => ({ pub: true, value });
+const priv = <T>(value: T): PubValue<T> => ({ pub: false, value });
 
 /**
  * Fetches average price for each pair/pair source using given endpoints.
@@ -40,8 +40,8 @@ export const fetchAveragePrices = curry(
     tokenEndpoints$: Observable<PriceFetcher>,
     pairs$: Observable<Pair | PairSource>
   ): Observable<PairPrice> => {
-    const pairsSubject = new Subject<PubValue<PairPrice>>();
-    const result$ = pairsSubject.pipe(shareReplay(5e2));
+    const priceSubject = new Subject<PubValue<PairPrice>>();
+    const result$ = priceSubject.pipe(shareReplay());
 
     defer(() => pairs$)
       .pipe(
@@ -60,7 +60,7 @@ export const fetchAveragePrices = curry(
           )
         )
       )
-      .subscribe(pairsSubject);
+      .subscribe(priceSubject);
 
     return result$.pipe(filterRx(prop("pub")), pluck("value"));
   }
@@ -108,7 +108,7 @@ const fetchAndAccumulateAveragePrices = curry(
 
           return fetchers$.pipe(
             mergeMap((endpoint) =>
-              from(endpoint.fetch(pair)).pipe(
+              from(endpoint.fetchPrice(pair)).pipe(
                 tap(({ price }) => {
                   if (process.env.LOG_PRICE_SOURCES) {
                     console.log(

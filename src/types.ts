@@ -1,5 +1,5 @@
 import { SubmittableExtrinsic } from "@polkadot/api/types";
-import { Observable } from "rxjs";
+import { Observable, OperatorFunction } from "rxjs";
 
 export interface Pair {
   from: string;
@@ -10,7 +10,7 @@ export interface Pair {
 
 export interface PairSource {
   deps: Observable<Pair>;
-  publish: (prices: Observable<PairPrice>) => Observable<PairPrice>;
+  publish: OperatorFunction<PairPrice, PairPrice>;
 }
 
 export interface PairPrice {

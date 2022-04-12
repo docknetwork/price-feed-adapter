@@ -6,14 +6,14 @@ import { PriceFetcher } from "../price-fetcher";
 
 export class BinanceFetcher extends PriceFetcher {
   static NAME = "Binance";
-  static REPLACEMENTS = Object.setPrototypeOf(
+  static SYMBOL_REPLACEMENTS = Object.setPrototypeOf(
     {
       USD: "USDT",
     },
     null
   );
 
-  async _fetchPrice({ from, to }: Pair): Promise<number> {
+  protected async requestPrice({ from, to }: Pair): Promise<number> {
     const url = "https://api.binance.com/api/v3/ticker/price";
 
     const symbol = `${from}${to}`;

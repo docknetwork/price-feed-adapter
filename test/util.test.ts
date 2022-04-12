@@ -1,6 +1,6 @@
 import { describe, it, expect } from "@jest/globals";
 import { zipObj } from "ramda";
-import { from, lastValueFrom, map, Observable, take, toArray, zip } from "rxjs";
+import { combineLatest, from, lastValueFrom, map, Observable, take, toArray } from "rxjs";
 import {
   BinanceFetcher,
   CoingeckoFetcher,
@@ -26,14 +26,14 @@ class TestFetcher extends PriceFetcher {
     this.data = data;
   }
 
-  async _fetchPrice(pair: Pair): Promise<number> {
+  protected async requestPrice(pair: Pair): Promise<number> {
     this.called++;
     return this.data[pair.from + pair.to];
   }
 }
 
 const checkAverage = async (endpoints, pair) => {
-  const results = await Promise.all(endpoints.map((e) => e.fetch(pair)));
+  const results = await Promise.all(endpoints.map((e) => e.fetchPrice(pair)));
 
   const avg = results.reduce(
     ({ total, count }, { price }) => ({
@@ -73,7 +73,7 @@ describe("basic", () => {
             pickPairPrice({ from: "D", to: "B" })
           );
 
-          return zip([ab$, db$]).pipe(
+          return combineLatest([ab$, db$]).pipe(
             map(([ab, db]) => ({
               price: ab.price / db.price,
               pair: { from: "A", to: "D" },
