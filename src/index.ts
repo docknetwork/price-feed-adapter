@@ -36,8 +36,10 @@ import { ApiPromise } from "@polkadot/api";
 import { AddressOrPair } from "@polkadot/api/types";
 
 async function main() {
-  await dock.init({ endpoint: process.env.DOCK_RPC_ENDPOINT });
-  const initiator = dock.keyring.addFromUri(process.env.INITIATOR_ACCOUNT_URI) as AddressOrPair;
+  await dock.init({ address: process.env.DOCK_RPC_ENDPOINT });
+  const initiator = dock.keyring.addFromUri(
+    process.env.INITIATOR_ACCOUNT_URI
+  ) as AddressOrPair;
   dock.setAccount(initiator);
 
   const tokenEndpoints$ = from([
@@ -99,8 +101,8 @@ async function main() {
 /**
  * Fetches pair price from the `Dock`.
  */
-const getDockPairPrice = async (pair) => {
-  const opt = await dock.api.query.priceFeedModule.price(pair);
+const getDockPairPrice = async (pair: Pair) => {
+  const opt = await dock.api.query.priceFeedModule.prices(pair);
   if (opt.isNone) {
     return null;
   }
@@ -134,7 +136,7 @@ const updatePairPrice = curry(
 
         const decimals = defaultTo(0, pair.decimals);
         const maxDiff = defaultTo(0, pair.maxDiff);
-        const nextAmount = nextPrice * 10 ** decimals;
+        const nextAmount = (nextPrice * 10 ** decimals) | 0;
         assertAmount(nextAmount);
 
         console.log("New price for", pair.from, "/", pair.to, ":", nextPrice);
@@ -191,9 +193,14 @@ const watchDockPairs = curry(
           mergeMap(updatePairPrice(dock.api)),
           batchExtrinsics(dock.api, 1e3, 5),
           concatMap((batch: BasicExtrinsic) =>
-            from(batch.signAndSend(initiator)).pipe(
+            from(dock.signAndSend(batch, initiator, true) as Promise<any>).pipe(
               tap((tx) =>
-                console.log("Transaction sent: ", (tx.toString as any)("hex"))
+                console.log(
+                  "Transaction finalized at block",
+                  tx.status.asFinalized.toString("hex"),
+                  ", tx hash is",
+                  tx.txHash.toString("hex")
+                )
               ),
               catchError((err) => {
                 console.error(err);
