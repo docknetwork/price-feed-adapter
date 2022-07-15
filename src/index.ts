@@ -18,22 +18,34 @@ import {
   tap,
 } from "rxjs/operators";
 import dock from "@docknetwork/sdk";
-import { apply, curry, defaultTo } from "ramda";
+import { apply, curry, o } from "ramda";
 
 import {
   BinanceFetcher,
   CryptocompareFetcher,
   CoingeckoFetcher,
 } from "./fetchers";
-import { BasicExtrinsic, Pair, PairPrice } from "./types";
+import {
+  BasicExtrinsic,
+  Pair,
+  PairPrice,
+  Publishable,
+  PublishablePairPrice,
+} from "./types";
 import {
   EtherChainGasPriceFetcher,
   GasStationGasPriceFetcher,
 } from "./fetchers/gas";
-import { fetchAveragePrices } from "./prices";
-import { assertFinite, batchExtrinsics, pickPairPrice } from "./helpers";
+import { getAllAveragePrices, getPublishableAveragePrices } from "./prices";
+import { batchExtrinsics, changeDecimals, pickPairPrice } from "./helpers";
 import { ApiPromise } from "@polkadot/api";
 import { AddressOrPair } from "@polkadot/api/types";
+import { BigNumber } from "ethers";
+import { formatUnits } from "ethers/lib/utils";
+
+const DOCK_DECIMALS = 6;
+const DOCK_USD = { from: "DOCK", to: "USD", decimals: 6 };
+const ETH_USD = { from: "ETH", to: "USD", decimals: 4 };
 
 async function main() {
   await dock.init({ address: process.env.DOCK_RPC_ENDPOINT });
@@ -53,33 +65,46 @@ async function main() {
   ]);
 
   const gasPrice$ = defer(
-    (): Observable<PairPrice> =>
-      of({ from: "GAS", to: "ETH" }).pipe(fetchAveragePrices(gasEndpoints$))
+    () =>
+      of({ from: "ETH-GAS", to: "ETH", decimals: 18 }).pipe(
+        getAllAveragePrices(gasEndpoints$)
+      ) as Observable<PairPrice>
   );
 
-  const dockToUsd = { from: "DOCK", to: "USD", decimals: 4, maxDiff: 100 };
+  const dockToUsd = {
+    pair: DOCK_USD,
+    publishConfig: { decimals: 4, minDiff: BigNumber.from(10) },
+  };
 
   const pairs$ = from([
     dockToUsd,
     {
-      deps: from([
-        { from: "DOCK", to: "USD" },
-        { from: "ETH", to: "USD" },
-      ]),
+      deps: from([DOCK_USD, ETH_USD]),
       publish: (prices$: Observable<PairPrice>) => {
-        const dockUsd$ = prices$.pipe(
-          pickPairPrice({ from: "DOCK", to: "USD" })
-        );
-        const ethUsd$ = prices$.pipe(pickPairPrice({ from: "ETH", to: "USD" }));
+        const dockUsd$ = prices$.pipe(pickPairPrice(DOCK_USD));
+        const ethUsd$ = prices$.pipe(pickPairPrice(ETH_USD));
 
         const calcGasDock = (
           dockUsd: PairPrice,
           ethUsd: PairPrice,
           gas: PairPrice
-        ) => ({
-          price: ((ethUsd.price * gas.price) / dockUsd.price) * 1e6,
-          pair: { from: "GAS", to: "DOCK", decimals: 3, maxDiff: 1e3 },
-        });
+        ) => {
+          const rawPrice = ethUsd.price.mul(gas.price).div(dockUsd.price);
+          const decimals =
+            ethUsd.pair.decimals + gas.pair.decimals - dockUsd.pair.decimals;
+
+          return {
+            price: changeDecimals(decimals, DOCK_DECIMALS, rawPrice),
+            pair: {
+              pair: {
+                from: "ETH-GAS",
+                to: "DOCK",
+                decimals: DOCK_DECIMALS,
+              },
+              publishConfig: { decimals: 9, minDiff: BigNumber.from(1e5) },
+            },
+          };
+        };
 
         return combineLatest([dockUsd$, ethUsd$, gasPrice$]).pipe(
           mapRx(apply(calcGasDock))
@@ -92,7 +117,11 @@ async function main() {
     timer(0, +process.env.WATCH_TIME || 6e4 * 5)
       .pipe(
         mapRx(() => pairs$),
-        watchDockPairs(fetchAveragePrices(tokenEndpoints$), initiator)
+        watchDockPairs(
+          dock.api,
+          initiator,
+          getPublishableAveragePrices(tokenEndpoints$)
+        )
       )
       .subscribe({ complete: () => resolve(null), error: reject });
   });
@@ -101,71 +130,80 @@ async function main() {
 /**
  * Fetches pair price from the `Dock`.
  */
-const getDockPairPrice = async (pair: Pair) => {
-  const opt = await dock.api.query.priceFeedModule.prices(pair);
+const getDockPairPrice = async <A extends ApiPromise>(api: A, pair: Pair) => {
+  const opt = (await api.query.priceFeedModule.prices(pair)) as any;
   if (opt.isNone) {
     return null;
   }
   const value = opt.unwrap();
 
   return {
-    amount: value.get("amount"),
+    amount: BigNumber.from(value.get("amount").toString()),
     decimals: value.get("decimals"),
     blockNumber: value.get("blockNumber"),
   };
 };
 
 /**
- * Updates pair price if difference between the given and current stored is greater than specified `maxDiff`.
+ * Updates pair price if difference between new and current stored is greater than specified `minDiff`.
  */
 const updatePairPrice = curry(
   <A extends ApiPromise>(
     api: A,
-    { price: nextPrice, pair }: PairPrice
+    {
+      price: nextPrice,
+      pair: {
+        pair,
+        publishConfig: { decimals, minDiff },
+      },
+    }: PublishablePairPrice
   ): Observable<BasicExtrinsic> =>
-    from(getDockPairPrice(pair)).pipe(
-      switchMap((cur) => {
-        const assertAmount = assertFinite(
-          () =>
-            `Failed to calculate price for ${JSON.stringify(
-              pair
-            )}: current is ${JSON.stringify(cur)}, next is ${JSON.stringify(
-              nextPrice
-            )}`
+    from(getDockPairPrice(api, pair)).pipe(
+      switchMap((curPrice) => {
+        const fmtAmount = (value) => formatUnits(value, decimals);
+        const nextAmount = changeDecimals(pair.decimals, decimals, nextPrice);
+
+        console.log(
+          "New price for",
+          pair.from,
+          "/",
+          pair.to,
+          ":",
+          fmtAmount(nextPrice)
         );
 
-        const decimals = defaultTo(0, pair.decimals);
-        const maxDiff = defaultTo(0, pair.maxDiff);
-        const nextAmount = (nextPrice * 10 ** decimals) | 0;
-        assertAmount(nextAmount);
-
-        console.log("New price for", pair.from, "/", pair.to, ":", nextPrice);
-
-        let update;
-        if (cur == null) {
+        let shouldUpdate;
+        if (curPrice == null) {
           console.log("-- No stored on-chain price found");
-          update = true;
+          shouldUpdate = true;
         } else {
-          const curAmount = cur.amount / 10 ** (cur.decimals - decimals);
-          assertAmount(curAmount);
+          const curAmount = changeDecimals(
+            curPrice.decimals,
+            decimals,
+            curPrice.amount
+          );
 
-          const diff = Math.abs(curAmount - nextAmount);
-          update = diff > maxDiff;
+          const diff = curAmount.sub(nextAmount).abs();
+          shouldUpdate = diff.gte(minDiff);
 
-          console.log("-- On-chain average is", curAmount / 10 ** decimals);
+          console.log("-- On-chain average is", fmtAmount(curAmount));
           console.log(
             "-- Difference is",
-            diff / 10 ** decimals,
+            fmtAmount(diff),
             "while allowed is",
-            maxDiff / 10 ** decimals
+            fmtAmount(minDiff)
           );
         }
 
-        if (update) {
+        if (shouldUpdate) {
           console.log("-- Updating");
 
           return of(
-            api.tx.priceFeedModule.setPrice(pair, nextAmount, decimals)
+            api.tx.priceFeedModule.setPrice(
+              pair,
+              nextAmount.toHexString(),
+              decimals
+            )
           );
         } else {
           console.log("-- Skipping");
@@ -181,24 +219,25 @@ const updatePairPrice = curry(
  * and if change is greater than minimum, performs batched updates.
  */
 const watchDockPairs = curry(
-  (
-    fetchAverages: OperatorFunction<Pair, PairPrice>,
+  <A extends ApiPromise>(
+    api: A,
     initiator: AddressOrPair,
-    pairBuckets$: Observable<Observable<Pair>>
+    fetchAverages: OperatorFunction<Publishable, PublishablePairPrice>,
+    pairBuckets$: Observable<Observable<Publishable>>
   ) =>
     pairBuckets$.pipe(
       switchMap((pairs$) =>
         pairs$.pipe(
           fetchAverages,
-          mergeMap(updatePairPrice(dock.api)),
-          batchExtrinsics(dock.api, 1e3, 5),
-          concatMap((batch: BasicExtrinsic) =>
-            from(dock.signAndSend(batch, initiator, true) as Promise<any>).pipe(
+          mergeMap(updatePairPrice(api as any)),
+          batchExtrinsics(api as any, 1e3, 5),
+          concatMap((tx: BasicExtrinsic) =>
+            from(dock.signAndSend(tx, initiator, true) as Promise<any>).pipe(
               tap((tx) =>
                 console.log(
                   "Transaction finalized at block",
                   tx.status.asFinalized.toString("hex"),
-                  ", tx hash is",
+                  "with hash:",
                   tx.txHash.toString("hex")
                 )
               ),

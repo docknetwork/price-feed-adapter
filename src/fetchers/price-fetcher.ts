@@ -1,4 +1,6 @@
+import { BigNumber } from "@ethersproject/bignumber";
 import { propOr } from "ramda";
+import { changeDecimals } from "../helpers";
 import { Pair, PairPrice } from "../types";
 
 export class PriceFetcher {
@@ -8,13 +10,17 @@ export class PriceFetcher {
 
   constructor() {}
 
+  /** Fetches price for the given pair. */
   async fetchPrice(pair: Pair): Promise<PairPrice> {
-    const { from, to } = pair;
+    const { from, to, decimals } = pair;
 
-    const price = await this.requestPrice({
+    const fixedPrice = await this.requestPrice({
       from: this.replaceSymbol(from),
       to: this.replaceSymbol(to),
+      decimals,
     });
+
+    const price = changeDecimals(18, decimals, fixedPrice);
 
     return { price, pair };
   }
@@ -27,7 +33,7 @@ export class PriceFetcher {
     );
   }
 
-  protected async requestPrice(_pair: Pair): Promise<number> {
+  protected async requestPrice(_pair: Pair): Promise<BigNumber> {
     throw new Error("Unimplemented");
   }
 }
@@ -37,9 +43,10 @@ export class GasPriceFetcher extends PriceFetcher {
     super();
   }
 
+  /** Fetches Ethereum gas price. */
   async fetchPrice(pair: Pair): Promise<PairPrice> {
-    if (pair.from !== "GAS" || pair.to !== "ETH") {
-      throw new Error("Expected GAS-ETH pair only");
+    if (pair.from !== "ETH-GAS" || pair.to !== "ETH") {
+      throw new Error("Expected ETH-GAS/ETH pair only");
     }
 
     return super.fetchPrice(pair);

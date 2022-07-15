@@ -1,5 +1,18 @@
 import { ApiPromise } from "@polkadot/api";
-import { complement, curry, eqBy, isEmpty, join, o, props, where } from "ramda";
+import { BigNumber } from "ethers";
+import {
+  complement,
+  curry,
+  either,
+  eqBy,
+  identity,
+  isEmpty,
+  join,
+  pipe,
+  prop,
+  props,
+  where,
+} from "ramda";
 import {
   Observable,
   OperatorFunction,
@@ -10,7 +23,7 @@ import {
   filter as filterRx,
   bufferTime,
 } from "rxjs";
-import { BasicExtrinsic, Pair, PairPrice } from "./types";
+import { BasicExtrinsic, Pair, PairPrice, PublishablePair } from "./types";
 
 /**
  * Acts as `switchMap` but operates over multiple stream switching by `pickItem` value.
@@ -28,19 +41,13 @@ export function switchMapBy<T, R>(
 }
 
 /**
- * Asserts value to be finite
- */
-export const assertFinite = curry((msg, value) => {
-  if (!isFinite(value)) {
-    throw new Error(typeof msg === "function" ? msg() : msg);
-  }
-});
-
-/**
  * Picks prices for the given pair from provided observable.
  */
 export const pickPairPrice = curry(
-  (pair: Pair, pairPrices$: Observable<PairPrice>): Observable<PairPrice> =>
+  (
+    pair: Pair | PublishablePair,
+    pairPrices$: Observable<PairPrice>
+  ): Observable<PairPrice> =>
     pairPrices$.pipe(filterRx(where({ pair: eqPairs(pair) })))
 );
 
@@ -50,12 +57,12 @@ export const pickPairPrice = curry(
 export const batchExtrinsics = curry(
   <A extends ApiPromise>(
     api: A,
-    time: number,
-    limit: number,
+    timeLimit: number,
+    amountLimit: number,
     extrs$: Observable<BasicExtrinsic>
   ): Observable<BasicExtrinsic> =>
     extrs$.pipe(
-      bufferTime(time, null, limit),
+      bufferTime(timeLimit, null, amountLimit),
       filterRx(complement(isEmpty)),
       mapRx((batch) =>
         batch.length === 1 ? batch[0] : api.tx.utility.batchAll(batch)
@@ -64,14 +71,38 @@ export const batchExtrinsics = curry(
 );
 
 /**
- * Returns unique id of pair in format %FROM%/%TO%
+ * Returns underlying pair for the given pair.
  */
-export const pairId: (pair: Pair) => string = o(
-  join("/"),
-  props(["from", "to"])
+export const rawPair: (pair: Pair | PublishablePair) => Pair = either(
+  prop("pair"),
+  identity
 );
 
 /**
- * Checks if two pairs are equal by `from`-`to` properties.
+ * Returns unique id of pair in format %FROM%/%TO%/%DECIMALS%
+ */
+export const pairId: (pair: Pair | PublishablePair) => string = pipe(
+  rawPair,
+  props(["from", "to", "decimals"]),
+  join("/")
+);
+
+/**
+ * Checks if two pairs are equal by `from`, `to` and `decimals` properties.
  */
 export const eqPairs = eqBy(pairId);
+
+/**
+ * Changes decimals for the given value.
+ */
+export const changeDecimals = curry(
+  (from: number, to: number, value: BigNumber): BigNumber => {
+    if (to < from) {
+      return value.div(BigNumber.from(10).pow(from - to));
+    } else if (to > from) {
+      return value.mul(BigNumber.from(10).pow(to - from));
+    } else {
+      return value;
+    }
+  }
+);

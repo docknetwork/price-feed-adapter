@@ -3,11 +3,13 @@
 import fetch from "node-fetch";
 import { Pair } from "../../types";
 import { PriceFetcher } from "../price-fetcher";
+import { BigNumber } from "ethers";
+import { parseUnits } from "ethers/lib/utils";
 
 export class CoinmarketcapFetcher extends PriceFetcher {
   static NAME = "Coinmarketcap";
 
-  protected async requestPrice({ from, to }: Pair): Promise<number> {
+  protected async requestPrice({ from, to }: Pair): Promise<BigNumber> {
     const url =
       "https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest";
 
@@ -25,6 +27,6 @@ export class CoinmarketcapFetcher extends PriceFetcher {
     });
     const json = await result.json();
 
-    return Number.parseFloat((json as any).data[from].quote[to].price);
+    return parseUnits(String((json as any).data[from].quote[to].price));
   }
 }

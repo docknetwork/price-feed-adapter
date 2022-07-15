@@ -1,6 +1,6 @@
 import { describe, it, expect } from "@jest/globals";
-import { zipObj } from "ramda";
-import { combineLatest, from, lastValueFrom, map, Observable, take, toArray } from "rxjs";
+import { identity, zipObj } from "ramda";
+import { combineLatest, from, lastValueFrom, map, Observable, take, toArray, tap } from "rxjs";
 import {
   BinanceFetcher,
   CoingeckoFetcher,
@@ -11,9 +11,11 @@ import {
   GasStationGasPriceFetcher,
 } from "../src/fetchers/gas";
 import { PriceFetcher } from "../src/fetchers";
-import { Pair, PairPrice } from "../src/types";
-import { fetchAveragePrices } from "../src/prices";
+import { Pair, PairPrice, PublishablePairPrice } from "../src/types";
+import { getPublishableAveragePrices } from "../src/prices";
 import { pickPairPrice } from "../src/helpers";
+import { BigNumber } from "ethers";
+import { parseUnits } from "ethers/lib/utils";
 
 class TestFetcher extends PriceFetcher {
   NAME = "TestFetcher";
@@ -26,79 +28,79 @@ class TestFetcher extends PriceFetcher {
     this.data = data;
   }
 
-  protected async requestPrice(pair: Pair): Promise<number> {
+  protected async requestPrice(pair: Pair): Promise<BigNumber> {
     this.called++;
-    return this.data[pair.from + pair.to];
+    return parseUnits(String(this.data[pair.from + pair.to]));
   }
 }
 
-const checkAverage = async (endpoints, pair) => {
+const checkAverage = async (endpoints, pair, mapRes = val => val.toNumber()) => {
   const results = await Promise.all(endpoints.map((e) => e.fetchPrice(pair)));
 
   const avg = results.reduce(
     ({ total, count }, { price }) => ({
-      total: total + price,
+      total: total.add(price),
       count: count + 1,
     }),
-    { total: 0, count: 0 }
+    { total: BigNumber.from(0), count: 0 }
   );
 
   for (const { price } of results) {
-    expect(avg.total / avg.count).toBeCloseTo(price);
+    expect(mapRes(avg.total.div(avg.count))).toBeCloseTo(mapRes(price));
   }
 };
 
 describe("basic", () => {
   it("checks basic workflow", async () => {
     const buildPrices = () =>
-      zipObj(["AB", "BC", "AB", "DB"], Array.from({ length: 4 }, Math.random));
+      zipObj(["AB", "BC", "AB", "DB"], Array.from({ length: 4 }, () => (Math.random() * 100) | 0));
     const pricesA = buildPrices();
     const pricesB = buildPrices();
 
     const endpoints = [new TestFetcher(pricesA), new TestFetcher(pricesB)];
 
     const pairs = [
-      { from: "A", to: "B" },
-      { from: "B", to: "C" },
+      { pair: { from: "A", to: "B", decimals: 4 }, publishConfig: { decimals: 2, minDiff: 0 } },
+      { pair: { from: "B", to: "C", decimals: 4 }, publishConfig: { decimals: 2, minDiff: 0 } },
       {
         deps: from([
-          { from: "A", to: "B" },
-          { from: "D", to: "B" },
+          { from: "A", to: "B", decimals: 4 },
+          { from: "D", to: "B", decimals: 4 },
         ]),
         publish: (prices$: Observable<PairPrice>) => {
           const ab$: Observable<PairPrice> = prices$.pipe(
-            pickPairPrice({ from: "A", to: "B" })
+            pickPairPrice({ from: "A", to: "B", decimals: 4 })
           );
           const db$: Observable<PairPrice> = prices$.pipe(
-            pickPairPrice({ from: "D", to: "B" })
+            pickPairPrice({ from: "D", to: "B", decimals: 4 })
           );
 
           return combineLatest([ab$, db$]).pipe(
             map(([ab, db]) => ({
-              price: ab.price / db.price,
-              pair: { from: "A", to: "D" },
+              price: ab.price.mul(10 ** 4).div(db.price),
+              pair: { pair: { from: "A", to: "D", decimals: 4 }, publishConfig: { decimals: 2, minDiff: 0 } }
             }))
           );
         },
       },
     ];
 
-    const prices: PairPrice[] = (await lastValueFrom(
-      from(pairs).pipe(fetchAveragePrices(from(endpoints)), take(3), toArray())
+    const prices: PublishablePairPrice[] = (await lastValueFrom(
+      from(pairs).pipe(getPublishableAveragePrices(from(endpoints)), take(3), toArray())
     )) as any;
 
-    for (const { price, pair } of prices) {
+    for (const { price, pair: { pair } } of prices) {
       if (pricesA[pair.from + pair.to]) {
         expect(
           (pricesA[pair.from + pair.to] + pricesB[pair.from + pair.to]) / 2
-        ).toBe(price);
+        ).toBe(price.toNumber() / 10 ** pair.decimals);
       } else {
-        expect(pair).toEqual({ from: "A", to: "D" });
+        expect(pair).toEqual({ from: "A", to: "D", decimals: 4 });
         expect(
           (pricesA["AB"] + pricesB["AB"]) /
             2 /
             ((pricesA["DB"] + pricesB["DB"]) / 2)
-        ).toBe(price);
+        ).toBeCloseTo(price.toNumber() / 10 ** pair.decimals);
       }
     }
 
@@ -114,7 +116,7 @@ describe("basic", () => {
       new BinanceFetcher(),
     ];
 
-    await checkAverage(endpoints, { from: "DOCK", to: "USD" });
+    await checkAverage(endpoints, { from: "DOCK", to: "USD", decimals: 2 });
   });
 
   it("checks gas endpoints", async () => {
@@ -123,9 +125,9 @@ describe("basic", () => {
       new GasStationGasPriceFetcher(),
     ];
 
-    await checkAverage(gasEndpoints, { from: "GAS", to: "ETH" });
+    await checkAverage(gasEndpoints, { from: "ETH-GAS", to: "ETH", decimals: 18 }, val => val.toNumber() / 1e13);
     await expect(() =>
-      checkAverage(gasEndpoints, { from: "ETH", to: "USD" })
+      checkAverage(gasEndpoints, { from: "ETH", to: "USD", decimals: 2 })
     ).rejects.toThrowError();
   });
 });

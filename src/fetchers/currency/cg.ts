@@ -3,6 +3,8 @@
 import fetch from "node-fetch";
 import { Pair } from "../../types";
 import { PriceFetcher } from "../price-fetcher";
+import { BigNumber } from "ethers";
+import { parseUnits } from "ethers/lib/utils";
 
 export class CoingeckoFetcher extends PriceFetcher {
   static NAME = "Coingecko";
@@ -13,7 +15,7 @@ export class CoingeckoFetcher extends PriceFetcher {
     null
   );
 
-  protected async requestPrice({ from, to }: Pair): Promise<number> {
+  protected async requestPrice({ from, to }: Pair): Promise<BigNumber> {
     const url = "https://api.coingecko.com/api/v3/simple/price";
 
     const params = {
@@ -26,8 +28,8 @@ export class CoingeckoFetcher extends PriceFetcher {
     });
     const json = await result.json();
 
-    return Number.parseFloat(
-      (json as any)[from.toLowerCase()][to.toLowerCase()]
+    return parseUnits(
+      String((json as any)[from.toLowerCase()][to.toLowerCase()])
     );
   }
 }

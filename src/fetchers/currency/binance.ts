@@ -1,5 +1,7 @@
 // Binance price API
 
+import { BigNumber } from "ethers";
+import { parseUnits } from "ethers/lib/utils";
 import fetch from "node-fetch";
 import { Pair } from "../../types";
 import { PriceFetcher } from "../price-fetcher";
@@ -13,7 +15,7 @@ export class BinanceFetcher extends PriceFetcher {
     null
   );
 
-  protected async requestPrice({ from, to }: Pair): Promise<number> {
+  protected async requestPrice({ from, to }: Pair): Promise<BigNumber> {
     const url = "https://api.binance.com/api/v3/ticker/price";
 
     const symbol = `${from}${to}`;
@@ -26,6 +28,6 @@ export class BinanceFetcher extends PriceFetcher {
     });
     const json = await result.json();
 
-    return Number.parseFloat((json as any).price);
+    return parseUnits(String((json as any).price));
   }
 }

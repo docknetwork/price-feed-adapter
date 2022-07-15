@@ -1,11 +1,8 @@
-import { curry, prop } from "ramda";
+import { curry, head, pipe, apply } from "ramda";
 import {
   Observable,
-  mergeScan,
   from,
-  switchMap,
   of,
-  EMPTY,
   mergeMap,
   tap,
   reduce,
@@ -16,63 +13,127 @@ import {
   connect,
   defer,
   merge,
-  pluck,
-  shareReplay,
-  Subject,
+  partition,
+  ReplaySubject,
 } from "rxjs";
-import { Pair, PairPrice, PairSource } from "./types";
+import {
+  Pair,
+  PairPrice,
+  PublishablePairSource,
+  PublishablePair,
+  PublishablePairPrice,
+  Publishable,
+} from "./types";
 import { PriceFetcher } from "./fetchers";
-import { pairId } from "./helpers";
+import { rawPair, pairId } from "./helpers";
+import { BigNumber } from "ethers";
 
-interface PubValue<T> {
-  pub: boolean;
-  value: T;
-}
-
-const pub = <T>(value: T): PubValue<T> => ({ pub: true, value });
-const priv = <T>(value: T): PubValue<T> => ({ pub: false, value });
+type GetAveragePrices<T> = (
+  tokenEndpoints$: Observable<PriceFetcher>,
+  pairs$: Observable<Pair | Publishable>
+) => Observable<T>;
 
 /**
  * Fetches average price for each pair/pair source using given endpoints.
+ * Returns two observables - [publishable prices, internally resolved prices].
  */
-export const fetchAveragePrices = curry(
+const resolveAndFetchAveragePrices = curry(
   (
     tokenEndpoints$: Observable<PriceFetcher>,
-    pairs$: Observable<Pair | PairSource>
-  ): Observable<PairPrice> => {
-    const priceSubject = new Subject<PubValue<PairPrice>>();
-    const result$ = priceSubject.pipe(shareReplay());
+    pairs$: Observable<Pair | Publishable>
+  ): [Observable<PublishablePairPrice>, Observable<PairPrice>] => {
+    const priceSubject = new ReplaySubject<PairPrice | PublishablePairPrice>();
+    const [publicRes$, internalRes$] = partition(
+      priceSubject,
+      ({ pair }) => "publishConfig" in pair
+    ) as [Observable<PublishablePairPrice>, Observable<PairPrice>];
 
     defer(() => pairs$)
       .pipe(
         connect((pairs$) =>
           merge(
             pairs$.pipe(
-              concatMap((value) =>
-                "deps" in value ? value.deps.pipe(mapRx(priv)) : of(pub(value))
-              ),
+              concatMap((value) => ("deps" in value ? value.deps : of(value))),
               fetchAndAccumulateAveragePrices(tokenEndpoints$)
             ),
             pairs$.pipe(
               filterRx((value) => "deps" in value),
-              resolveSources(result$.pipe(pluck("value")))
+              publishResolved(internalRes$)
             )
           )
         )
       )
       .subscribe(priceSubject);
 
-    return result$.pipe(filterRx(prop("pub")), pluck("value"));
+    return [publicRes$, internalRes$];
   }
 );
 
 /**
- * Resolves pair source from the dependent pairs.
+ * Fetches average price for each pair/pair source using given endpoints
+ * and returns only pairs for publishing.
  */
-const resolveSources = curry(
-  (prices$: Observable<PairPrice>, pairs$: Observable<PairSource>) =>
+export const getPublishableAveragePrices = curry(
+  pipe(
+    resolveAndFetchAveragePrices,
+    head
+  ) as GetAveragePrices<PublishablePairPrice>
+);
+
+/**
+ * Fetches average price for each pair/pair source using given endpoints
+ * and returns all pairs.
+ */
+export const getAllAveragePrices = curry(
+  pipe(resolveAndFetchAveragePrices, apply(merge)) as GetAveragePrices<
+    PairPrice | PublishablePairPrice
+  >
+);
+
+/**
+ * Publishes resolved pair sources.
+ */
+const publishResolved = curry(
+  (prices$: Observable<PairPrice>, pairs$: Observable<PublishablePairSource>) =>
     pairs$.pipe(
-      mergeMap((value: PairSource) => value.publish(prices$).pipe(mapRx(pub)))
+      mergeMap((pair: PublishablePairSource) => pair.publish(prices$))
+    )
+);
+
+/**
+ * Fetches average for the given pair using supplied fetchers.
+ */
+const fetchAveragePriceForPair = curry(
+  (pair: Pair, fetchers$: Observable<PriceFetcher>): Observable<BigNumber> =>
+    fetchers$.pipe(
+      mergeMap((endpoint) =>
+        from(endpoint.fetchPrice(pair)).pipe(
+          tap(({ price }) => {
+            if (process.env.LOG_PRICE_SOURCES) {
+              console.log(
+                pair.from,
+                "/",
+                pair.to,
+                ":",
+                price,
+                "from",
+                (endpoint.constructor as any).NAME
+              );
+            }
+          })
+        )
+      ),
+      reduce(
+        ({ amount, total }, { price }) => ({
+          amount: amount + 1,
+          total: total.add(price),
+        }),
+        { amount: 0, total: BigNumber.from(0) }
+      ),
+      mapRx(({ amount, total }) => total.div(BigNumber.from(amount))),
+      catchError((err) => {
+        throw err;
+      })
     )
 );
 
@@ -82,69 +143,28 @@ const resolveSources = curry(
 const fetchAndAccumulateAveragePrices = curry(
   (
     fetchers$: Observable<PriceFetcher>,
-    pairs$: Observable<PubValue<Pair>>
-  ): Observable<PubValue<PairPrice>> =>
-    pairs$.pipe(
-      mergeScan((acc, { pub, value: pair }) => {
+    pairs$: Observable<Pair | PublishablePair>
+  ): Observable<PairPrice | PublishablePairPrice> => {
+    const acc = Object.create(null);
+
+    return pairs$.pipe(
+      mergeMap((pair) => {
         const key = pairId(pair);
 
-        let fetched: Promise<PubValue<PairPrice>> = acc[key];
-        if (fetched) {
-          return from(fetched).pipe(
-            switchMap((stored) => {
-              if (pub && !stored.pub) {
-                stored.pub = true;
-                return of({ price: stored.value.price, pair });
-              }
-              return EMPTY;
-            })
-          );
-        } else {
-          let resolve, reject;
-          acc[key] = new Promise((res, rej) => {
-            resolve = res;
-            reject = rej;
-          });
+        let subj: ReplaySubject<BigNumber> | void = acc[key];
+        if (!subj) {
+          subj = new ReplaySubject<BigNumber>();
+          fetchers$
+            .pipe(fetchAveragePriceForPair(rawPair(pair)))
+            .subscribe(subj);
 
-          return fetchers$.pipe(
-            mergeMap((endpoint) =>
-              from(endpoint.fetchPrice(pair)).pipe(
-                tap(({ price }) => {
-                  if (process.env.LOG_PRICE_SOURCES) {
-                    console.log(
-                      pair.from,
-                      "/",
-                      pair.to,
-                      ":",
-                      price,
-                      "from",
-                      (endpoint.constructor as any).NAME
-                    );
-                  }
-                })
-              )
-            ),
-            reduce(
-              ({ amount, total }, { price }) => ({
-                amount: amount + 1,
-                total: total + price,
-              }),
-              { amount: 0, total: 0 }
-            ),
-            mapRx(({ amount, total }) => ({
-              price: total / amount,
-              pair,
-            })),
-            mapRx((value) => {
-              resolve({ pub, value });
-              return { pub, value };
-            }),
-            catchError((err) => {
-              reject(err);
-              throw err;
-            })
-          );
+          acc[key] = subj;
         }
-      }, Object.create(null))
-    )
+
+        return subj.pipe(mapRx((price) => ({ pair, price }))) as Observable<
+          PairPrice | PublishablePairPrice
+        >;
+      })
+    );
+  }
 );

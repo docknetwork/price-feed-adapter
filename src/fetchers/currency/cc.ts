@@ -3,11 +3,13 @@
 import fetch from "node-fetch";
 import { Pair } from "../../types";
 import { PriceFetcher } from "../price-fetcher";
+import { BigNumber } from "ethers";
+import { parseUnits } from "ethers/lib/utils";
 
 export class CryptocompareFetcher extends PriceFetcher {
   static NAME = "Cryptocompare";
 
-  protected async requestPrice({ from, to }: Pair): Promise<number> {
+  protected async requestPrice({ from, to }: Pair): Promise<BigNumber> {
     const url = "https://min-api.cryptocompare.com/data/price";
 
     const params = {
@@ -20,6 +22,6 @@ export class CryptocompareFetcher extends PriceFetcher {
     });
     const json = await result.json();
 
-    return Number.parseFloat((json as any)[to]);
+    return parseUnits(String((json as any)[to]));
   }
 }
