@@ -169,7 +169,7 @@ const updatePairPrice = curry(
           "/",
           pair.to,
           ":",
-          fmtAmount(nextPrice)
+          fmtAmount(nextAmount)
         );
 
         let shouldUpdate;
